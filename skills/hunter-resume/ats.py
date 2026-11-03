@@ -5,6 +5,7 @@
     python3 ats.py compare before.md after.md --jd google-swe.md     # before/after + truth check
     python3 ats.py trace  before.md after.md                         # did the rewrite invent anything?
     python3 ats.py terms  --jd google-swe.md                         # what the posting asks for
+    python3 ats.py cv     hunter/resumes/base.md --jd monzo-swe.md       # UK CV conventions
 
 THE SCORE (0 to 100)
 
@@ -40,6 +41,13 @@ posting's words will find them, and whether each bullet proves something.
 THE TRUTH CHECK (trace): every number and every known term in the rewrite must already
 be in the original (or in a notes file you pass with --facts). Anything new is listed
 as INVENTED and the exit code is 1. Capitalized words that are new are listed to check.
+
+UK CV CHECK (cv): UK employers expect a CV, not a US resume. The check flags what a UK CV
+leaves out (photo, date of birth or age, marital status, gender, religion, a National
+Insurance number), US spellings (organize, analyze, color; skipped when the posting itself
+uses them), US-style dates (03/14/2025), a GPA with no degree classification (First, 2:1),
+a "Resume" heading, and a length past about two pages. Lines starting FIX should change;
+CONSIDER lines are judgement calls. Exit code 1 when there is anything to FIX.
 """
 
 import argparse
@@ -69,6 +77,10 @@ scaled scoped secured shipped simplified slashed sold solved spearheaded sped st
 steered streamlined supervised taught tested trained tripled tuned unified upgraded validated won
 wrote made set brought began chose found held kept sent spun took undertook upheld
 """.split())
+# British spellings of the same verbs, so a UK CV scores the same as a US resume
+STRONG_VERBS |= {"analysed", "modelled", "modernised", "optimised", "organised", "reorganised",
+                 "standardised", "prioritised", "centralised", "customised", "summarised", "visualised",
+                 "utilised", "maximised", "minimised", "specialised"}
 WEAK_VERBS = set("""
 worked helped assisted participated responsible involved tasked duties handled contributed utilized
 used was were did tried attended exposed familiarized learned supported aided
@@ -565,6 +577,86 @@ def render_trace(t):
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------- UK CV conventions
+
+US_UK = {
+    "organize": "organise", "organized": "organised", "organizing": "organising", "organization": "organisation",
+    "organizations": "organisations", "optimize": "optimise", "optimized": "optimised", "optimizing": "optimising",
+    "optimization": "optimisation", "analyze": "analyse", "analyzed": "analysed", "analyzing": "analysing",
+    "prioritize": "prioritise", "prioritized": "prioritised", "utilize": "utilise", "utilized": "utilised",
+    "maximize": "maximise", "maximized": "maximised", "minimize": "minimise", "minimized": "minimised",
+    "standardize": "standardise", "standardized": "standardised", "specialized": "specialised",
+    "recognized": "recognised", "realized": "realised", "summarize": "summarise", "summarized": "summarised",
+    "visualize": "visualise", "visualized": "visualised", "customize": "customise", "customized": "customised",
+    "modernize": "modernise", "modernized": "modernised", "centralize": "centralise", "centralized": "centralised",
+    "automatize": "automatise", "color": "colour", "colors": "colours", "behavior": "behaviour",
+    "behaviors": "behaviours", "favorite": "favourite", "honor": "honour", "honors": "honours", "labor": "labour",
+    "center": "centre", "centers": "centres", "defense": "defence", "modeling": "modelling", "modeled": "modelled",
+    "traveled": "travelled", "traveling": "travelling", "canceled": "cancelled", "enrollment": "enrolment",
+    "fulfill": "fulfil", "catalog": "catalogue", "judgment": "judgement",
+}
+# (pattern, why, case-sensitive?)
+PERSONAL = [
+    (r"!\[[^\]]*\]\(|\bphoto(graph)?\b|\bheadshot\b", "a photo: UK CVs leave it out, so the first read is about the work", False),
+    (r"\bdate of birth\b|\bd\.?o\.?b\.?\s*:|\bborn (on|in) \d|\bage\s*:\s*\d", "date of birth or age: leave it out (age is a protected characteristic under the Equality Act 2010)", False),
+    (r"\bmarital status\b|\b(married|single|divorced)\b\s*(,|$)", "marital status: leave it out", False),
+    (r"\bgender\s*:|\bsex\s*:", "gender: leave it out", False),
+    (r"\breligion\s*:", "religion: leave it out", False),
+    (r"\b[A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b", "what looks like a National Insurance number: never put it on a CV", True),
+]
+
+
+def cv_check(text, jd_text=""):
+    """UK CV conventions. Returns {"fix": [...], "consider": [...], "words": n}."""
+    fix, consider = [], []
+    low = text.lower()
+    for pat, why, exact in PERSONAL:
+        m = re.search(pat, text) if exact else re.search(pat, text, re.I | re.M)
+        if m:
+            fix.append("%s (found %r)" % (why, m.group(0).strip()))
+    jd_low = (jd_text or "").lower()
+    found = {}
+    for us, uk in US_UK.items():
+        n = len(re.findall(r"(?<![a-z])%s(?![a-z])" % us, low))
+        if n and not re.search(r"(?<![a-z])%s(?![a-z])" % us, jd_low):
+            found[us] = (uk, n)
+    if found:
+        fix.append("US spelling: %s" % ", ".join("%s -> %s%s" % (us, uk, " (x%d)" % n if n > 1 else "")
+                                                 for us, (uk, n) in sorted(found.items())))
+    if re.search(r"\b(0?[1-9]|1[0-2])/(0?[1-9]|[12]\d|3[01])/(19|20)\d\d\b", text):
+        fix.append("US-style dates (MM/DD/YYYY): write months as words, e.g. Mar 2024 - Jun 2025")
+    if re.search(r"^\s*#*\s*r[eé]sum[eé]\s*$", text, re.I | re.M):
+        fix.append("a 'Resume' heading: in the UK it is a CV, and most CVs need no such heading at all")
+    if re.search(r"\bgpa\b", low) and not re.search(r"\b(first|2:1|2:2|third)\b|first[- ]class|upper second|lower second", low):
+        consider.append("a GPA with no degree classification: UK employers read First, 2:1 or 2:2 "
+                        "(or 'predicted 2:1' if you have not graduated)")
+    if not re.search(r"right to work|work permit|visa|settled status|british citizen|irish citizen", low):
+        consider.append("no right-to-work line: if you have the right to work in the UK, one short line "
+                        "(e.g. 'Full right to work in the UK') saves the recruiter a question")
+    words = len(re.findall(r"[A-Za-z0-9][\w'+-]*", text))
+    if words > 900:
+        consider.append("%d words: likely more than two pages. UK CVs are usually two pages at most "
+                        "(one for graduates)" % words)
+    elif words < 200:
+        consider.append("%d words: very short. Add results with numbers if you have them" % words)
+    if re.search(r"\breferences\b", low) and not re.search(r"available on request", low):
+        consider.append("referee details on the CV: most UK employers ask for these after an offer; "
+                        "'References available on request' or nothing at all is the norm")
+    return {"fix": fix, "consider": consider, "words": words}
+
+
+def render_cv(r, label=""):
+    out = ["UK CV check%s: %d words" % (" for " + label if label else "", r["words"])]
+    for f in r["fix"]:
+        out.append("  FIX       " + f)
+    for c in r["consider"]:
+        out.append("  CONSIDER  " + c)
+    if not r["fix"] and not r["consider"]:
+        out.append("  Nothing to change: it reads like a UK CV.")
+    out.append("Change only the form, never the facts: the truth check still applies.")
+    return "\n".join(out)
+
+
 def _read(path):
     if not path or not os.path.exists(path):
         raise AtsError("no file at %s" % path)
@@ -594,6 +686,10 @@ def build_parser():
     sp.add_argument("--facts")
     sp.add_argument("--terms")
     sp.add_argument("--json", action="store_true")
+    sp = sub.add_parser("cv", help="UK CV conventions: personal details, spelling, dates, length")
+    sp.add_argument("resume")
+    sp.add_argument("--jd", help="the posting: its own spellings are never flagged")
+    sp.add_argument("--json", action="store_true")
     sp = sub.add_parser("terms", help="what the posting asks for, line by line")
     sp.add_argument("--jd", required=True)
     sp.add_argument("--terms")
@@ -608,6 +704,10 @@ def main(argv=None):
         p.print_help()
         return 2
     try:
+        if a.cmd == "cv":
+            r = cv_check(_read(a.resume), _read(a.jd) if a.jd else "")
+            print(json.dumps(r, indent=2) if a.json else render_cv(r, os.path.basename(a.resume)))
+            return 1 if r["fix"] else 0
         terms = load_terms(TERMS, a.terms)
         if a.cmd == "score":
             today = datetime.date(*[int(x) for x in a.today.split("-")]) if a.today else datetime.date.today()

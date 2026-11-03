@@ -1,17 +1,18 @@
 ---
 name: hunter-apply
 description: >-
-  The Application Assistant. Fills the user's job applications from their
-  own saved answers and leaves every one as a draft for them to review and
-  submit: maps each form question to hunter/profile.json (name, links, work
-  authorization, sponsorship, start date, relocation and more), flags what
-  only the user can answer (salary, voluntary self-identification, anything
-  not in the profile), runs a per-application checklist (tailored resume,
-  cover letter, research, warm intro), fills the form in the user's browser
-  with Claude in Chrome and stops before Submit. Use when the user says
-  "apply to this job", "fill out the application", "fill the Greenhouse
-  form", "prep my application", "what's left before I apply", or "save it as
-  a draft".
+  The Application Assistant. Fills the user's job applications from their own
+  saved answers and leaves every one as a draft for them to review and submit:
+  maps each form question to hunter/profile.json (name, links, work
+  authorization, sponsorship, start date, relocation and more), flags what only
+  the user can answer (salary, voluntary self-identification, anything not in
+  the profile), runs a per-application checklist (tailored resume, cover
+  letter, research, warm intro), fills the form in the user's browser with
+  Claude in Chrome and stops before Submit. Use when the user says "apply to
+  this job", "fill out the application", "fill the Greenhouse form", "prep my
+  application", "what's left before I apply", or "save it as a draft". Knows UK
+  forms too: notice period, degree classification, visa sponsorship. Keeps an
+  answer bank of approved "why this company" answers.
 argument-hint: "[role id]"
 ---
 
@@ -115,6 +116,35 @@ gender, veteran status and current salary to him, and marks "Why Google?"
 for the cover letter. Claude fills the form in his browser and stops. The
 pipeline shows "Draft · not sent" until Jordan reads it and clicks Submit
 himself.
+
+## In the UK
+
+Start from `profile.uk.example.json`. UK forms ask things US forms rarely do,
+and the mapper knows them: notice period (often one month or more, separate from
+the start date), degree classification and A-levels or UCAS points (from
+`education`), and whether the user needs a Skilled Worker visa (the sponsorship
+answer). Three kinds are never filled from the profile: equality monitoring
+(ethnicity, disability, sexual orientation, religion or belief) unless the user
+saved their own choice, criminal record or DBS questions, and the National
+Insurance number, which employers need only after an offer and the user types
+in themselves.
+
+## The answer bank
+
+Questions such as "why this company", "why this sector" and "why are you
+leaving" come up on the form, in the cover letter and in the interview. Keep
+one approved answer for each in `hunter/answers.json` so all three tell the
+same story:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/answers.py" bank set --key why_company --company Monzo \
+    --text-file draft.txt --approved "yes, save that"
+python3 "${CLAUDE_SKILL_DIR}/answers.py" bank list
+```
+
+Save only words the user approved, with their approval in `--approved`. Once
+saved, `answer` and `fill` use it for "why this company" on that company's
+roles, and for the generic questions everywhere.
 
 ## What it never does
 

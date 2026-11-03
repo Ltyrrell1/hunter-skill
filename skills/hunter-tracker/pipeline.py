@@ -32,6 +32,8 @@ Commands:
     python3 pipeline.py next --today 2026-10-16 --days 7
     python3 pipeline.py show google-software-engineer
     python3 pipeline.py export --what roles --out hunter/pipeline-roles.csv
+    python3 pipeline.py export --format ics --out hunter/pipeline.ics      # next steps, follow-ups, booked chats
+    python3 pipeline.py export --format html --out hunter/dashboard.html   # a one-page dashboard
 
 Every command takes --file (default hunter/pipeline.json). Commands that depend on
 the date take --today YYYY-MM-DD (default: the computer's date), so results are
@@ -41,6 +43,7 @@ reproducible. Nothing here sends anything: it is a record.
 import argparse
 import csv
 import datetime
+import html
 import io
 import json
 import os
@@ -507,6 +510,145 @@ def to_csv(data, what):
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------- calendar (.ics)
+
+BOOKED_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})$")
+
+
+def _ics_text(s):
+    return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_fold(line):
+    """RFC 5545: lines longer than 75 octets continue on the next line after a space."""
+    raw = line.encode("utf-8")
+    if len(raw) <= 75:
+        return line
+    out, cur = [], b""
+    for ch in line:
+        b = ch.encode("utf-8")
+        if len(cur) + len(b) > (75 if not out else 74):
+            out.append(cur.decode("utf-8"))
+            cur = b""
+        cur += b
+    out.append(cur.decode("utf-8"))
+    return "\r\n ".join(out)
+
+
+def calendar_events(data, today):
+    """Every dated item worth a calendar entry: booked chats (timed), role next steps and
+    thread follow-ups (all-day). Closed roles and finished threads are left out."""
+    events = []
+    names = {c.get("id"): c.get("name") for c in data.get("contacts", [])}
+    roles = {r.get("id"): r for r in data.get("roles", [])}
+    booked_days = set()
+    for t in data.get("threads", []):
+        b = t.get("booked") or {}
+        m = BOOKED_RE.match(b.get("when") or "")
+        if t.get("status") == "booked" and m:
+            start = datetime.datetime(*[int(x) for x in m.group(1).split("-")], hour=int(m.group(2)), minute=int(m.group(3)))
+            r = roles.get(t.get("role_id")) or {}
+            booked_days.add((t.get("role_id"), m.group(1)))
+            events.append({"uid": "booked-%s-%s" % (t.get("contact_id"), m.group(1)), "start": start,
+                           "end": start + datetime.timedelta(minutes=int(b.get("minutes") or 30)),
+                           "summary": "Coffee chat: %s%s" % (names.get(t.get("contact_id"), t.get("contact_id")),
+                                                            (" (%s)" % r.get("company")) if r.get("company") else ""),
+                           "location": b.get("where") or "", "description": "Booked through hunter-connector."})
+    for r in data.get("roles", []):
+        nd = day_or_none(r.get("next_date"))
+        if r.get("stage") in ACTIVE and nd and (r.get("id"), nd.isoformat()) not in booked_days:
+            events.append({"uid": "role-%s-%s" % (r.get("id"), nd.isoformat()), "day": nd,
+                           "summary": "%s: %s" % (r.get("company"), r.get("next_step") or "next step"),
+                           "description": "%s (%s). %s" % (r.get("title"), r.get("stage"), r.get("url") or "")})
+    for t in data.get("threads", []):
+        nd = day_or_none(t.get("next_followup"))
+        if nd and t.get("status") not in ("declined", "closed", "booked"):
+            who = names.get(t.get("contact_id"), t.get("contact_id"))
+            events.append({"uid": "followup-%s-%s-%s" % (t.get("contact_id"), t.get("channel"), nd.isoformat()),
+                           "day": nd, "summary": "Follow up with %s (%s)" % (who, t.get("channel")),
+                           "description": "Draft it with /hunter-followup. Nothing is sent without your yes."})
+    events.sort(key=lambda e: (e.get("start") or datetime.datetime.combine(e["day"], datetime.time()), e["uid"]))
+    return events
+
+
+def to_ics(data, today):
+    stamp = today.strftime("%Y%m%dT000000Z")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//hunter-skill//pipeline//EN", "CALSCALE:GREGORIAN",
+             "X-WR-CALNAME:Job hunt"]
+    for e in calendar_events(data, today):
+        lines += ["BEGIN:VEVENT", "UID:%s@hunter-skill" % re.sub(r"[^A-Za-z0-9._-]", "-", e["uid"]),
+                  "DTSTAMP:" + stamp]
+        if e.get("start"):
+            # floating local time: shows at that clock time wherever the user's calendar is set
+            lines += ["DTSTART:" + e["start"].strftime("%Y%m%dT%H%M%S"), "DTEND:" + e["end"].strftime("%Y%m%dT%H%M%S")]
+        else:
+            lines += ["DTSTART;VALUE=DATE:" + e["day"].strftime("%Y%m%d"),
+                      "DTEND;VALUE=DATE:" + (e["day"] + datetime.timedelta(days=1)).strftime("%Y%m%d")]
+        lines.append("SUMMARY:" + _ics_text(e["summary"]))
+        if e.get("location"):
+            lines.append("LOCATION:" + _ics_text(e["location"]))
+        if e.get("description"):
+            lines.append("DESCRIPTION:" + _ics_text(e["description"].strip()))
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_ics_fold(l) for l in lines) + "\r\n"
+
+
+# ---------------------------------------------------------------- dashboard (.html)
+
+def to_html(data, today, stale_days=14):
+    s = summary(data, today, stale_days)
+    esc = lambda v: html.escape("" if v is None else str(v))
+    stage_cells = "".join('<div class="stat"><b>%d</b><span>%s</span></div>' % (s["by_stage"][st], st)
+                          for st in STAGES if s["by_stage"][st] or st in ACTIVE)
+    nxt = "".join('<li class="%s"><time>%s</time> %s%s</li>' % (
+        "overdue" if n["overdue"] else "", esc(n["date"]), esc(n["what"]), " <em>overdue</em>" if n["overdue"] else "")
+        for n in s["next"]) or "<li>Nothing scheduled in the next 7 days.</li>"
+    stale = "".join("<li>%s, %s (%s): %s</li>" % (
+        esc(r["company"]), esc(r["title"]), esc(r["stage"]),
+        "never touched" if r["idle_days"] is None else "%d days idle" % r["idle_days"]) for r in s["stale"]) \
+        or "<li>Nothing stale.</li>"
+    order = {st: i for i, st in enumerate(STAGES)}
+    rows = "".join("<tr><td>%s</td><td>%s</td><td><span class=\"pill %s\">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+        esc(r.get("company")),
+        ('<a href="%s">%s</a>' % (esc(r["url"]), esc(r.get("title")))) if r.get("url") else esc(r.get("title")),
+        esc(r.get("stage")), esc(r.get("stage")), esc(r.get("applied") or ""), esc(r.get("next_step") or ""),
+        esc(r.get("next_date") or ""))
+        for r in sorted(data.get("roles", []), key=lambda r: (order.get(r.get("stage"), 99), r.get("next_date") or "9999",
+                                                               (r.get("company") or "").lower())))
+    page = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job hunt</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1c1c1a;--muted:#6b6b66;--line:#e4e4df;--card:#fff;--accent:#2f6f5e;--warn:#b4442e}
+@media (prefers-color-scheme:dark){:root{--bg:#171716;--fg:#ecece8;--muted:#9a9a93;--line:#2c2c2a;--card:#1f1f1d;--accent:#7cc4ad;--warn:#e98a73}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.sub{color:var(--muted);margin:0 0 16px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}.stat b{display:block;font-size:24px}.stat span{color:var(--muted)}
+ul{list-style:none;padding:0;margin:0}li{padding:8px 0;border-bottom:1px solid var(--line)}time{font-variant-numeric:tabular-nums;color:var(--muted);margin-right:8px}
+li.overdue time,li em{color:var(--warn);font-style:normal}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:640px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}td:nth-child(4),td:nth-child(6){white-space:nowrap}th{color:var(--muted);font-weight:500}
+a{color:var(--accent)}.pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:13px}
+.pill.offer{border-color:var(--accent);color:var(--accent)}.pill.rejected,.pill.withdrawn{color:var(--muted)}
+</style></head><body><main>
+<h1>Job hunt</h1><p class="sub">As of {{asof}}: {{roles}}, {{active}} active, {{applied}} applied, {{contacts}}.</p>
+<div class="stats">{{stages}}</div>
+<h2>Next 7 days</h2><ul>{{next}}</ul>
+<h2>Gone quiet ({{stale_days}}+ days, nothing scheduled)</h2><ul>{{stale}}</ul>
+<h2>Every role</h2><div class="wrap"><table><thead><tr><th>Company</th><th>Role</th><th>Stage</th><th>Applied</th><th>Next step</th><th>When</th></tr></thead>
+<tbody>{{rows}}</tbody></table></div>
+<p class="sub" style="margin-top:24px">Made by hunter-tracker from hunter/pipeline.json. Re-export to refresh.</p>
+</main></body></html>
+"""
+    values = {"asof": esc(s["as_of"]), "roles": plural(s["roles"], "role"), "active": s["active"],
+              "applied": s["applied"], "contacts": plural(s["contacts"], "contact"), "stages": stage_cells, "next": nxt, "stale": stale, "rows": rows,
+              "stale_days": stale_days}
+    for k, v in values.items():
+        page = page.replace("{{%s}}" % k, str(v))
+    return page
+
+
 # ---------------------------------------------------------------- commands
 
 def _require_valid(data):
@@ -716,14 +858,20 @@ def cmd_show(a):
 
 def cmd_export(a):
     data = load(a.file)
-    text = to_csv(data, a.what)
+    today = today_from(a.today)
+    if a.format == "ics":
+        text, what = to_ics(data, today), "%d calendar entries" % len(calendar_events(data, today))
+    elif a.format == "html":
+        text, what = to_html(data, today), "dashboard, %d roles" % len(data["roles"])
+    else:
+        text, what = to_csv(data, a.what), "%d %s" % (len(data[a.what]), a.what)
     if a.out:
         d = os.path.dirname(a.out)
         if d:
             os.makedirs(d, exist_ok=True)
         with open(a.out, "w", encoding="utf-8", newline="") as fh:
             fh.write(text)
-        print("Wrote %s (%d %s)" % (a.out, len(data[a.what]), a.what))
+        print("Wrote %s (%s)" % (a.out, what))
     else:
         sys.stdout.write(text)
     return 0
@@ -802,9 +950,10 @@ def build_parser():
     common(sp)
     sp.add_argument("id")
 
-    sp = sub.add_parser("export", help="write roles, contacts or threads as CSV")
+    sp = sub.add_parser("export", help="CSV (roles, contacts, threads), a calendar (.ics) or a dashboard (.html)")
     common(sp)
-    sp.add_argument("--what", choices=("roles", "contacts", "threads"), default="roles")
+    sp.add_argument("--format", choices=("csv", "ics", "html"), default="csv")
+    sp.add_argument("--what", choices=("roles", "contacts", "threads"), default="roles", help="for CSV")
     sp.add_argument("--out")
     return p
 

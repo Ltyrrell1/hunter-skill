@@ -1,6 +1,7 @@
 # The Hunter skill
 
-Eleven Claude skills that land you the job. Free, MIT, no signup, no API key, nothing to connect.
+Eleven Claude skills that land you the job, in the US or the UK. Free, MIT, no signup, no API key, nothing to connect.
+(One optional free key, from Companies House, adds UK company records to the research briefs.)
 
 `skills/hunter-scout` `skills/hunter-resume` `skills/hunter-research`
 `skills/hunter-linkedin` `skills/hunter-connector` `skills/hunter-cover`
@@ -18,7 +19,7 @@ Nothing is ever sent or submitted without your yes. Claude drafts, you approve, 
 Paste this repo link into Claude and say `install skill`:
 
 ```
-https://github.com/Jakeschincariol/hunter-skill
+https://github.com/Ltyrrell1/hunter-skill
 
 install skill
 ```
@@ -26,7 +27,7 @@ install skill
 Or as a plugin, in Claude Code:
 
 ```
-/plugin marketplace add Jakeschincariol/hunter-skill
+/plugin marketplace add Ltyrrell1/hunter-skill
 /plugin install hunter-skill@hunter-skill
 ```
 
@@ -35,7 +36,7 @@ Claude Code namespaces plugin skills, so installed as a plugin they show up as
 plain `/hunter-scout`:
 
 ```bash
-git clone https://github.com/Jakeschincariol/hunter-skill.git
+git clone https://github.com/Ltyrrell1/hunter-skill.git
 cp -r hunter-skill/skills/hunter-* ~/.claude/skills/
 ```
 
@@ -90,6 +91,40 @@ An example: Jordan Reyes, a Software Engineer in Chicago, going for Google.
 8. **`hunter-salary`** when the offer comes: total comp by year, the counter.
 9. **`hunter-followup`** and **`hunter-tracker`** keep every thread moving.
 
+## In the UK
+
+Set `"region": "UK"` in `hunter/profile.json` (start from
+`skills/hunter-apply/profile.uk.example.json`) and the pack works the UK way:
+
+- **Scout**: UK places count as yours and US-only roles are flagged for right to
+  work; `jobs.py search --region UK` searches the UK boards (Monzo, Google
+  DeepMind, GoCardless, Cleo, Octopus Energy) plus manual routes for Wise and
+  Civil Service Jobs. Add any other company with `--board`.
+- **Research**: `brief.py build --company Monzo --uk` adds the Companies House
+  record (status, SIC codes, accounts dates, current directors, recent filings),
+  for private companies too. It needs a free key in `COMPANIES_HOUSE_API_KEY`.
+- **Resume becomes CV**: `ats.py cv` flags what UK CVs leave out (photo, date of
+  birth, marital status), US spellings, US dates, a GPA with no 2:1, and length.
+- **Applications**: notice period, degree classification, A-levels, Skilled
+  Worker visa questions, UK equality monitoring and DBS questions (the last two
+  are always yours to answer).
+- **Salary**: `offer.py uk` turns gross pay into take-home: income tax (rest of
+  UK or Scottish bands), National Insurance, student loan plans 1, 2, 4, 5 and
+  postgraduate, and pension, from HMRC's published rates for 2026 to 2027.
+
+## Keeping track
+
+- `pipeline.py export --format ics` writes every next step, follow-up and booked
+  chat as a calendar file you can import into Google Calendar, Outlook or Apple
+  Calendar. With a calendar connected, the skills offer to add them directly,
+  always with your yes.
+- `pipeline.py export --format html` writes a one-page dashboard: counts by
+  stage, the next seven days, what has gone quiet and every role.
+- `answers.py bank` keeps your approved answers to the questions that come up
+  again and again (why this company, why this sector, why you are leaving), so
+  the cover letter, the form and the interview tell one story. `bank check`
+  flags any figure in a draft that is in neither the bank nor your resume.
+
 ## The tools
 
 All standard-library Python. The network tools read public pages and APIs only,
@@ -108,6 +143,10 @@ python3 skills/hunter-interview/star.py loop --company google
 python3 skills/hunter-salary/offer.py total hunter/offers/google.json
 python3 skills/hunter-followup/followup.py due
 python3 skills/hunter-tracker/pipeline.py init
+python3 skills/hunter-tracker/pipeline.py export --format html --out hunter/dashboard.html
+python3 skills/hunter-salary/offer.py uk --gross 45000 --student-loan plan2
+python3 skills/hunter-resume/ats.py cv hunter/resumes/base.md
+python3 skills/hunter-apply/answers.py bank list
 ```
 
 ```bash
@@ -137,7 +176,8 @@ true, and asks when something is missing.
 
 **Sources are cited.** Interview loops come from each company's own published
 prep pages, and anything else is marked community-reported. Salary benchmarks
-come from public data (BLS) or ranges you supply, with the source shown.
+come from public data (BLS) or ranges you supply, with the source shown. UK
+take-home pay uses HMRC's published rates, and the rates file names its source.
 
 **No guarantees.** It makes you better prepared and better connected. It cannot
 promise an interview, an offer or a number.
@@ -151,12 +191,15 @@ skills/hunter-research/    SKILL.md, brief.py, brief.template.md, companies.json
 skills/hunter-linkedin/    SKILL.md, profile.py, limits.json, linkedin.example.json
 skills/hunter-connector/   SKILL.md, emails.py, outreach.py
 skills/hunter-cover/       SKILL.md, cover.py, example-cover.md
-skills/hunter-apply/       SKILL.md, answers.py, profile.example.json
+skills/hunter-apply/       SKILL.md, answers.py, profile.example.json, profile.uk.example.json
 skills/hunter-interview/   SKILL.md, star.py, questions.json, example-answer.md
-skills/hunter-salary/      SKILL.md, offer.py, offer.example.json, competing.example.json, bench.example.json
+skills/hunter-salary/      SKILL.md, offer.py, uk-tax.json, offer.example.json, competing.example.json, bench.example.json
 skills/hunter-followup/    SKILL.md, followup.py, templates.json
 skills/hunter-tracker/     SKILL.md, pipeline.py, pipeline.example.json
 tests/                     unittest suite + offline fixtures
+.github/workflows/         tests on every push, a weekly live check of the job boards
 ```
 
-MIT. Made by [Jake Schincariol](https://opusjake.ai).
+MIT. Maintained by [Lewis Tyrrell](https://github.com/Ltyrrell1). Based on
+[The Hunter skill](https://github.com/Jakeschincariol/hunter-skill) by Jake Schincariol.
+What changed in this fork: [CHANGELOG.md](CHANGELOG.md).

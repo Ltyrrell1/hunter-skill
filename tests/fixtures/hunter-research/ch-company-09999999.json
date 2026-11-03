@@ -1,0 +1,11 @@
+{
+  "_note": "FICTIONAL test data in the shape of the Companies House company profile API.",
+  "company_name": "EXAMPLE BANK LIMITED",
+  "company_number": "09999999",
+  "company_status": "active",
+  "type": "ltd",
+  "date_of_creation": "2015-02-06",
+  "registered_office_address": {"address_line_1": "1 Example Street", "locality": "London", "postal_code": "EC1A 1AA", "country": "United Kingdom"},
+  "sic_codes": ["64191"],
+  "accounts": {"last_accounts": {"made_up_to": "2026-03-31", "type": "full"}, "next_accounts": {"due_on": "2027-12-31"}}
+}

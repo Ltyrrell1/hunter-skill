@@ -229,7 +229,8 @@ class Boards(unittest.TestCase):
         for b in doc["boards"]:
             if b["type"] in jobs.AUTO:
                 self.assertTrue(b.get("token"), b["company"])
-                self.assertGreater(b.get("jobs_seen", 0), 0, b["company"])
+                # a live count, or (for boards added without a live call) a note saying how it was checked
+                self.assertTrue(b.get("jobs_seen", 0) > 0 or b.get("note"), b["company"])
             else:
                 self.assertTrue(b.get("why_manual") and b.get("route") and b.get("careers"), b["company"])
 
@@ -251,7 +252,51 @@ class Boards(unittest.TestCase):
         code, out, _ = run(["boards"])
         self.assertEqual(code, 0)
         self.assertIn("manual  Amazon", out)
-        self.assertIn("auto    Netflix     eightfold", out)
+        self.assertIn("auto    Netflix         eightfold", out)
+        self.assertIn("auto    Monzo           greenhouse monzo  [UK]", out)
+
+
+class UK(unittest.TestCase):
+    def test_us_detection_ignores_ordinary_words(self):
+        for loc in ("Remote OR Hybrid", "Join us in London", "IN office, Berlin", "London, UK"):
+            self.assertFalse(jobs.is_us(loc), loc)
+        for loc in ("San Francisco, CA", "Austin, TX | Remote", "Remote - US", "Remote (US)",
+                    "New York, NY (HQ)", "Washington, DC", "Cambridge, MA"):
+            self.assertTrue(jobs.is_us(loc), loc)
+
+    def test_gb_detection_and_namesakes(self):
+        for loc in ("London, UK", "Edinburgh, Scotland", "Manchester", "Canary Wharf, London", "Remote, GB"):
+            self.assertTrue(jobs.is_gb(loc), loc)
+        for loc in ("Cambridge, MA", "Birmingham, AL", "Berlin, Germany"):
+            self.assertFalse(jobs.is_gb(loc), loc)
+        self.assertIsNone(jobs.place_match("Cambridge, MA", ["Cambridge, UK"]))
+        self.assertEqual(jobs.place_match("Canary Wharf, London", ["London, UK"]), "London, UK")
+
+    def test_profile_country(self):
+        self.assertEqual(jobs.profile_country({}), "US")
+        self.assertEqual(jobs.profile_country({"region": "uk"}), "GB")
+        self.assertEqual(jobs.profile_country({"work_authorization": {"country": "United Kingdom"}}), "GB")
+
+    def test_uk_profile_scores_london_remote_and_flags_the_us(self):
+        prof = {"target_roles": ["Software Engineer"], "skills": ["Python"], "locations": ["London, UK"],
+                "work_authorization": {"country": "GB"}, "relocate": True}
+        today = jobs.parse_day("2026-11-03")
+        base = {"company": "Acme", "title": "Software Engineer", "_text": "Python", "posted": "2026-11-01"}
+        s1, why1, _ = jobs.score(dict(base, location="London, England", remote=False), prof, today)
+        s2, _, warn2 = jobs.score(dict(base, location="New York, NY", remote=False), prof, today)
+        s3, why3, _ = jobs.score(dict(base, location="Remote, EMEA", remote=True), prof, today)
+        self.assertGreater(s1, s2)
+        self.assertTrue(any("outside the UK" in w for w in warn2))
+        self.assertTrue(any("remote" in w for w in why3))
+        s4, why4, _ = jobs.score(dict(base, location="Manchester, UK", remote=False), prof, today)
+        self.assertTrue(any("relocating" in w for w in why4))
+
+    def test_region_filter(self):
+        doc = jobs.load_json(jobs.BOARDS)
+        auto, manual, _ = jobs.pick_boards(doc["boards"], region="UK")
+        self.assertIn("Monzo", [b["company"] for b in auto])
+        self.assertNotIn("Stripe", [b["company"] for b in auto])
+        self.assertIn("Wise", [b["company"] for b in manual])
 
 
 if __name__ == "__main__":

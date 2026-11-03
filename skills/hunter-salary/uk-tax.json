@@ -1,0 +1,24 @@
+{
+  "_note": "UK employee deductions by tax year, used by `offer.py uk`. Copied from HMRC's published rates for employers. Add a new year when HMRC publishes it (usually in the spring before 6 April). Bands are on TAXABLE income (after the personal allowance), except the personal allowance taper, which starts at 100,000 of adjusted net income and removes 1 for every 2 above it.",
+  "years": {
+    "2026-27": {
+      "source": "HMRC, Rates and thresholds for employers 2026 to 2027",
+      "url": "https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2026-to-2027",
+      "checked": "2026-11-03",
+      "personal_allowance": 12570,
+      "taper_start": 100000,
+      "income_tax": {
+        "rUK": [[37700, 0.20], [125140, 0.40], [null, 0.45]],
+        "scotland": [[3967, 0.19], [16956, 0.20], [31092, 0.21], [62430, 0.42], [125140, 0.45], [null, 0.48]]
+      },
+      "ni": {"primary_threshold": 12570, "upper_earnings_limit": 50270, "main_rate": 0.08, "upper_rate": 0.02},
+      "student_loans": {
+        "plan1": {"threshold": 26900, "rate": 0.09},
+        "plan2": {"threshold": 29385, "rate": 0.09},
+        "plan4": {"threshold": 33795, "rate": 0.09},
+        "plan5": {"threshold": 25000, "rate": 0.09},
+        "postgrad": {"threshold": 21000, "rate": 0.06}
+      }
+    }
+  }
+}

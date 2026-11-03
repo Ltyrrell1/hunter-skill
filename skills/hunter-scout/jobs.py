@@ -19,6 +19,7 @@ Sources (public JSON, one request per board plus a few job details):
   Workday     POST https://<host>/wday/cxs/<tenant>/<site>/jobs  (NVIDIA)
   Eightfold   https://<host>/api/apply/v2/jobs?domain=<domain>&query=...  (Netflix)
 Google, Meta and Amazon have no feed this tool may read (robots.txt or terms);
+UK boards carry regions: ["UK"]; `search --region UK` uses only those (plus --board extras);
 `boards` prints the manual route for each.
 
 Fit score (0-100) = title 35 + skills 30 + location 15 + seniority 10
@@ -41,7 +42,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOARDS = os.path.join(HERE, "boards.json")
-UA = "hunter-skill/1.0 (job scout; +https://github.com/Jakeschincariol/hunter-skill)"
+UA = "hunter-skill/1.1 (job scout; +https://github.com/Ltyrrell1/hunter-skill)"
 AUTO = ("greenhouse", "lever", "ashby", "workday", "eightfold")
 EMDASH, ENDASH = chr(0x2014), chr(0x2013)  # built from code points: the repo has no literal em dash
 
@@ -78,6 +79,20 @@ NON_US = ("europe", "emea", "apac", "united kingdom", "london", "uk", "ireland",
           "canada", "toronto", "singapore", "japan", "tokyo", "netherlands", "amsterdam", "france",
           "paris", "spain", "madrid", "brazil", "mexico", "australia", "sydney", "korea", "taiwan",
           "china", "vietnam", "switzerland", "zurich", "sweden", "lisbon", "portugal")
+# places that put a listing in the United Kingdom (checked with is_gb, which also rules out
+# US namesakes such as Cambridge, MA or Birmingham, AL)
+UK_MARKERS = ("united kingdom", "great britain", "britain", "england", "scotland", "wales",
+              "northern ireland", "uk", "u.k.")
+UK_PLACES = ("london", "manchester", "edinburgh", "glasgow", "bristol", "leeds", "birmingham", "cambridge",
+             "oxford", "belfast", "cardiff", "reading", "newcastle", "newcastle upon tyne", "liverpool",
+             "sheffield", "nottingham", "brighton", "milton keynes", "southampton", "aberdeen", "dundee",
+             "york", "bath", "cheltenham", "guildford", "coventry", "leicester", "exeter", "swansea",
+             "salford", "canary wharf", "carlisle", "lancaster", "preston", "norwich", "plymouth")
+# remote regions that include the UK: a "Remote, EMEA" listing is open to someone in the UK
+GB_REGIONS = ("europe", "emea", "united kingdom", "london", "uk")
+COUNTRY_ALIASES = {"us": "US", "usa": "US", "united states": "US", "gb": "GB", "uk": "GB",
+                   "united kingdom": "GB", "great britain": "GB", "england": "GB", "scotland": "GB",
+                   "wales": "GB", "northern ireland": "GB"}
 AREAS = {
     "san francisco bay area": ["san francisco", "bay area", "mountain view", "palo alto", "menlo park",
                                "sunnyvale", "san jose", "santa clara", "los gatos", "oakland",
@@ -85,6 +100,11 @@ AREAS = {
     "new york": ["new york", "nyc", "brooklyn"],
     "seattle": ["seattle", "bellevue", "redmond", "kirkland"],
     "los angeles": ["los angeles", "santa monica", "culver city", "playa vista"],
+    "london": ["london", "city of london", "canary wharf", "shoreditch", "farringdon", "king's cross",
+               "kings cross", "old street", "southwark"],
+    "manchester": ["manchester", "salford", "mediacityuk"],
+    "edinburgh": ["edinburgh", "leith"],
+    "newcastle": ["newcastle", "newcastle upon tyne", "gateshead"],
 }
 
 
@@ -480,18 +500,69 @@ def skill_hits(text, skills):
     return hits
 
 
+US_WORDS = re.compile(r"united states|\bu\.s\.(?:a\.)?|\busa\b|remote\W{1,3}us\b", re.I)
+US_TOKEN = re.compile(r"(?<![A-Za-z])US(?![A-Za-z])")  # case-sensitive: "US", never the word "us"
+# a two-letter state code only where an address puts one: after a comma, bracket, bar or slash, or
+# alone, and followed by the end, punctuation or a ZIP. "Remote OR Hybrid" and "IN office" do not count.
+STATE_CODE = re.compile(r"(?:^|[,(|/;]\s*)(?:%s)(?=\s*(?:$|[,)(|/;]|\s-\s|\d))" % "|".join(US_CODES))
+GB_TOKEN = re.compile(r"(?<![A-Za-z])GB(?![A-Za-z])")
+
+
+def _word(word, low):
+    return re.search(r"(?<![a-z])%s(?![a-z])" % re.escape(word), low) is not None
+
+
 def is_us(loc):
-    low = (loc or "").lower()
-    if re.search(r"united states|\bu\.s\.|\busa\b|\bus\b|remote \(u\.?s", low):
+    loc = loc or ""
+    low = loc.lower()
+    if US_WORDS.search(loc) or US_TOKEN.search(loc):
         return True
-    if any(re.search(r"\b%s\b" % s, low) for s in US_STATES):
+    if any(_word(s, low) for s in US_STATES):
         return True
-    return bool(re.search(r"\b(?:%s)\b" % "|".join(US_CODES), loc or ""))
+    return bool(STATE_CODE.search(loc))
+
+
+def is_gb(loc):
+    """True when the listing is in the UK. A UK city name alone does not count when the
+    rest of the location is clearly American (Cambridge, MA; Birmingham, AL)."""
+    loc = loc or ""
+    low = loc.lower()
+    if any(_word(m, low) for m in UK_MARKERS) or GB_TOKEN.search(loc):
+        return True
+    return any(_word(c, low) for c in UK_PLACES) and not is_us(loc)
 
 
 def non_us(loc):
     low = (loc or "").lower()
-    return any(re.search(r"\b%s\b" % re.escape(w), low) for w in NON_US)
+    return any(_word(w, low) for w in NON_US)
+
+
+def profile_country(profile):
+    """Where the user can work: work_authorization.country, else region, else US (the old default)."""
+    raw = ((profile or {}).get("work_authorization") or {}).get("country") or (profile or {}).get("region") or "US"
+    return COUNTRY_ALIASES.get(str(raw).strip().lower(), str(raw).strip().upper())
+
+
+def in_country(loc, country):
+    if country == "US":
+        return is_us(loc)
+    if country == "GB":
+        return is_gb(loc)
+    return None  # not a country this tool can recognise
+
+
+def abroad(loc, country):
+    """True when the listing is clearly somewhere the user is not authorised to work."""
+    if country == "US":
+        return non_us(loc) and not is_us(loc)
+    if country == "GB":
+        if is_gb(loc):
+            return False
+        low = (loc or "").lower()
+        if any(_word(r, low) for r in GB_REGIONS):
+            return False
+        return is_us(loc) or non_us(loc)
+    return False
 
 
 def place_match(loc, places):
@@ -502,8 +573,14 @@ def place_match(loc, places):
         for area, members in AREAS.items():
             if city in members or city == area:
                 names = members
-        if any(n and n in low for n in names):
-            return p
+        if not any(n and n in low for n in names):
+            continue
+        # a UK place never matches a US namesake, and a US place never matches a UK one
+        if is_gb(p) and not is_gb(loc) and is_us(loc):
+            continue
+        if is_us(p) and not is_us(loc) and is_gb(loc):
+            continue
+        return p
     return None
 
 
@@ -536,21 +613,27 @@ def score(job, profile, today):
 
     loc = job["location"]
     place = place_match(loc, profile.get("locations"))
-    us_only = (profile.get("work_authorization") or {}).get("country", "US") == "US"
-    if job.get("remote") and not (us_only and non_us(loc) and not is_us(loc)):
+    country = profile_country(profile)
+    away = abroad(loc, country)
+    if job.get("remote") and not away:
         l_pts = 15
         why.append("remote (%s)" % loc if profile.get("remote", True) else "remote")
         if not profile.get("remote", True):
             l_pts = 8
-    elif place:
+    elif place and not away:
         l_pts = 15
         why.append("in %s, one of your locations" % place)
-    elif profile.get("relocate") and (is_us(loc) or not us_only) and not (us_only and non_us(loc) and not is_us(loc)):
+    elif profile.get("relocate") and not away and in_country(loc, country) is not False:
         l_pts = 8
         why.append("in %s (you are open to relocating)" % loc)
     else:
         l_pts = 0
-        warn.append("%s is outside your locations" % loc)
+        if away:
+            warn.append("%s is outside your locations and outside %s, where you can work: check the "
+                        "right to work or sponsorship" % (
+                loc, "the UK" if country == "GB" else ("the US" if country == "US" else country)))
+        else:
+            warn.append("%s is outside your locations" % loc)
 
     years = profile.get("years_experience")
     asked = years_asked(job.get("_text", ""))
@@ -594,8 +677,17 @@ def score(job, profile, today):
 
 # ---------------------------------------------------------------- search
 
-def pick_boards(boards, companies=None, use_all=False, profile=None, extra=None):
-    """(boards to fetch, manual boards to mention, unknown company names)."""
+def in_region(board, region):
+    return (region or "").upper() in [r.upper() for r in board.get("regions") or []]
+
+
+def pick_boards(boards, companies=None, use_all=False, profile=None, extra=None, region=None):
+    """(boards to fetch, manual boards to mention, unknown company names). With region
+    (e.g. "UK") and no named companies, only boards tagged with that region are used."""
+    if region and not companies:
+        boards = [b for b in boards if in_region(b, region)]
+        use_all = True
+        profile = None
     allb = list(boards) + list(extra or [])
     by = {b["company"].lower(): b for b in allb}
     if companies:
@@ -778,6 +870,7 @@ def main(argv=None):
     s.add_argument("--board", action="append", default=[], help="extra board: 'Company=greenhouse:token'")
     s.add_argument("--company", action="append", default=[], help="only these companies (repeat)")
     s.add_argument("--all", action="store_true", help="every automatic board in boards.json")
+    s.add_argument("--region", help="only boards tagged with this region in boards.json, e.g. UK")
     s.add_argument("--title", action="append", default=[], help="target titles (default: profile target_roles)")
     s.add_argument("--any-title", action="store_true", help="keep every title, just score it")
     s.add_argument("--location", action="append", default=[], help="keep these places (plus remote)")
@@ -804,6 +897,7 @@ def main(argv=None):
     c.add_argument("--boards", default=BOARDS)
     c.add_argument("--company", action="append", default=[])
     c.add_argument("--board", action="append", default=[])
+    c.add_argument("--region", help="only boards tagged with this region, e.g. UK")
     c.add_argument("--offline", metavar="DIR")
 
     args = ap.parse_args(argv)
@@ -829,10 +923,11 @@ def main(argv=None):
     doc = load_json(args.boards, {"boards": []})
     if args.cmd == "boards":
         for bd in doc["boards"]:
+            tag = ("  [%s]" % ", ".join(bd["regions"])) if bd.get("regions") else ""
             if bd["type"] in AUTO:
-                print("auto    %-11s %-10s %s" % (bd["company"], bd["type"], bd.get("token")))
+                print("auto    %-15s %-10s %s%s" % (bd["company"], bd["type"], bd.get("token"), tag))
             else:
-                print("manual  %-11s %s" % (bd["company"], bd.get("careers")))
+                print("manual  %-15s %s%s" % (bd["company"], bd.get("careers"), tag))
                 print("        why: %s" % bd.get("why_manual"))
                 print("        route: %s" % bd.get("route"))
         print("Verified %s. Re-check any time with `jobs.py check`." % doc.get("verified"))
@@ -845,7 +940,8 @@ def main(argv=None):
         return 2
 
     if args.cmd == "check":
-        auto, manual, unknown = pick_boards(doc["boards"], args.company or None, not args.company, None, extra)
+        auto, manual, unknown = pick_boards(doc["boards"], args.company or None, not args.company, None, extra,
+                                            region=args.region)
         if extra and not args.company:
             auto = [x for x in auto if x in extra] or auto
         fetcher = Fetcher(offline=args.offline, pause=1.0)
@@ -868,7 +964,8 @@ def main(argv=None):
               "fill in your own details first." % args.profile, file=sys.stderr)
         return 2
     today = _today(args.today)
-    auto, manual, unknown = pick_boards(doc["boards"], args.company or None, args.all, profile, extra)
+    auto, manual, unknown = pick_boards(doc["boards"], args.company or None, args.all, profile, extra,
+                                        region=args.region)
     if extra and not args.company:
         auto += [x for x in extra if x not in auto]
     notes = ["%s is not in boards.json: add it with --board 'Name=greenhouse:token' (or lever/ashby)" % u

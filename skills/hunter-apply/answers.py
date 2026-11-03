@@ -13,6 +13,19 @@ user's browser and stops before Submit, and the user submits.
     python3 answers.py draft --role <role-id> --form-url https://... --answers hunter/applications/<role-id>.json
     python3 answers.py submitted --role <role-id> --confirm "I submitted it"
 
+THE ANSWER BANK (hunter/answers.json): the user's approved answers to the questions that
+come up again and again, so the cover letter, the form and the interview tell one story.
+Company answers (why_company, why_role) are kept per company; the rest (why_sector,
+why_leaving, strengths, weakness, tell_me_about_yourself, achievement) once for everyone.
+Only words the user approved go in, and `bank check` lists any number or claim-like figure in
+a draft that is in neither the bank nor the resume, before the draft goes anywhere.
+
+    python3 answers.py bank set --key why_company --company Monzo --text "..." --approved "yes, save it"
+    python3 answers.py bank get --key why_company --company Monzo
+    python3 answers.py bank list
+    python3 answers.py bank check hunter/covers/monzo-software-engineer.md --company Monzo \
+        --resume hunter/resumes/base.md
+
 form.json is a list of questions as they appear on the form: strings, or
 {"label": "...", "options": ["Yes", "No"], "required": true}.
 Statuses: filled (from the profile), ask (the user must answer), sensitive
@@ -33,13 +46,17 @@ BANK = [
     ("self_id.race_ethnicity", r"\brace\b|ethnicit|hispanic|latino", "sensitive"),
     ("self_id.veteran_status", r"veteran|military service|armed forces", "sensitive"),
     ("self_id.disability_status", r"disabilit", "sensitive"),
+    ("self_id.sexual_orientation", r"sexual orientation", "sensitive"),
+    ("self_id.religion", r"religion|belief", "sensitive"),
+    ("convictions", r"conviction|criminal record|\bdbs\b|disclosure (and|&) barring|basic disclosure", "sensitive"),
+    ("ni_number", r"national insurance|\bni number\b|\bnino\b", "sensitive"),
     ("salary_history", r"(current|previous|past|prior)\s+(salary|compensation|pay)|salary history", "sensitive"),
-    ("sponsorship", r"sponsor", "fact"),
+    ("sponsorship", r"sponsor|(require|need)s?\b.{0,40}\bvisa\b|skilled worker", "fact"),
     ("work_authorization", r"(legally )?(authori[sz]ed|eligible|permitted) to work|work authori[sz]ation|right to work", "fact"),
     ("salary_expectation", r"(desired|expected|expectation|target)s?\b.*(salary|compensation|pay)|salary expectation|"
                            r"compensation expectation|(salary|compensation) requirement", "ask_if_empty"),
-    ("start_date", r"start date|when can you start|earliest (start|available)|availability to start|notice period",
-     "fact"),
+    ("notice_period", r"notice period|how much notice", "fact"),
+    ("start_date", r"start date|when can you start|earliest (start|available)|availability to start", "fact"),
     ("relocation", r"relocat", "fact"),
     ("onsite", r"on-?site|in[- ]office|hybrid|commute|work from (the )?office", "fact"),
     ("how_did_you_hear", r"how did you (hear|find|learn)|where did you (hear|find|see)|source of (application|referral)",
@@ -58,6 +75,9 @@ BANK = [
     ("years_experience", r"years of (professional |relevant |work )?experience|how many years", "fact"),
     ("current.company", r"current (company|employer)|(company|employer) name", "fact"),
     ("current.title", r"current (title|role|position)|job title", "fact"),
+    ("education.classification", r"classification|predicted (grade|degree|class)|degree (result|grade)|\b2:1\b",
+     "fact"),
+    ("education.a_levels", r"a[- ]levels?|ucas|highers|leaving cert", "fact"),
     ("education.school", r"school|university|college|institution", "fact"),
     ("education.degree", r"degree|qualification|field of study|major", "fact"),
     ("education.year", r"graduation|year (of )?(graduat|complet)", "fact"),
@@ -66,7 +86,7 @@ BANK = [
     ("name", r"(full |legal )?name", "fact"),
     ("email", r"e-?mail", "fact"),
     ("phone", r"phone|mobile|cell", "fact"),
-    ("location", r"location|city|where are you (based|located)|current address|address", "fact"),
+    ("location", r"location|city|town|postcode|zip|where are you (based|located)|current address|address", "fact"),
     ("resume", r"resume|résumé|\bcv\b", "file"),
 ]
 COMPILED = [(k, re.compile(p, re.I), kind) for k, p, kind in BANK]
@@ -118,6 +138,11 @@ def lookup(profile, key):
         "work_authorization": yes_no(auth.get("authorized")),
         "salary_expectation": a.get("salary_expectation"),
         "start_date": a.get("start_date") or a.get("notice_period"),
+        "notice_period": a.get("notice_period") or a.get("start_date"),
+        "education.classification": edu.get("classification"),
+        "education.a_levels": edu.get("a_levels") or (p.get("school_qualifications") or None),
+        "convictions": None,
+        "ni_number": None,
         "relocation": a.get("relocation") if a.get("relocation") is not None else yes_no(p.get("relocate")),
         "onsite": a.get("onsite"),
         "how_did_you_hear": a.get("how_did_you_hear"),
@@ -146,6 +171,93 @@ def lookup(profile, key):
         "cover_letter": None,
     }
     return simple.get(key)
+
+
+def is_uk(profile):
+    p = profile or {}
+    c = str((p.get("work_authorization") or {}).get("country") or p.get("region") or "").strip().lower()
+    return c in ("gb", "uk", "united kingdom", "great britain", "england", "scotland", "wales", "northern ireland")
+
+
+# ---------------------------------------------------------------- the answer bank
+
+BANK_FILE = "answers.json"
+COMPANY_KEYS = ("why_company", "why_role", "what_you_bring")
+GENERIC_KEYS = ("why_sector", "why_leaving", "strengths", "weakness", "tell_me_about_yourself", "achievement",
+                "career_goals", "salary_expectation")
+
+
+def bank_path(workspace="hunter"):
+    return os.path.join(workspace, BANK_FILE)
+
+
+def load_bank(workspace="hunter"):
+    b = load_json(bank_path(workspace)) or {}
+    b.setdefault("generic", {})
+    b.setdefault("companies", {})
+    return b
+
+
+def bank_set(bank, key, text, approval, company=None, today=None):
+    key = slug(key).replace("-", "_")
+    if not (approval or "").strip():
+        raise ApplyError("the bank keeps only answers the user approved: pass --approved with their words")
+    if key in COMPANY_KEYS and not company:
+        raise ApplyError("%s is per company: pass --company" % key)
+    entry = {"text": text.strip(), "approved": approval.strip(),
+             "updated": (today or _dt.date.today()).isoformat()}
+    if company:
+        c = bank["companies"].setdefault(slug(company), {"company": company})
+        c[key] = entry
+    else:
+        bank["generic"][key] = entry
+    return entry
+
+
+def bank_get(bank, key, company=None):
+    key = slug(key).replace("-", "_")
+    if company:
+        e = (bank["companies"].get(slug(company)) or {}).get(key)
+        if e:
+            return e
+    return bank["generic"].get(key)
+
+
+def bank_for_role(bank, role_id):
+    """The company entry whose slug the role id starts with (roles are '<company>-<title>')."""
+    if not role_id:
+        return None
+    best = None
+    for cslug, entry in bank["companies"].items():
+        if role_id == cslug or role_id.startswith(cslug + "-"):
+            if best is None or len(cslug) > len(best[0]):
+                best = (cslug, entry)
+    return best[1] if best else None
+
+
+FIGURE_RE = re.compile(r"(?<![\w.])[$\u00a3\u20ac]?\d[\d,.]*(?:\s?(?:%|k|m|bn|x|\+))?(?![\w])", re.I)
+
+
+def figures(text):
+    out = set()
+    for m in FIGURE_RE.finditer(text or ""):
+        f = m.group(0).strip().lower().rstrip(".,").replace(",", "").replace(" ", "")
+        if re.fullmatch(r"(19|20)\d\d", f):  # years are dates, not claims
+            continue
+        out.add(f)
+    return out
+
+
+def bank_check(text, bank, company=None, resume_text=""):
+    """Figures in a draft that appear in neither the bank (generic + this company) nor the resume."""
+    known = set(figures(resume_text))
+    for e in bank["generic"].values():
+        known |= figures(e.get("text"))
+    if company:
+        for k, e in (bank["companies"].get(slug(company)) or {}).items():
+            if isinstance(e, dict):
+                known |= figures(e.get("text"))
+    return sorted(f for f in figures(text) if f not in known)
 
 
 def classify(label):
@@ -190,8 +302,18 @@ def answer(question, profile, role_id=None, workspace="hunter", options=None):
     if kind == "sensitive":
         out["status"] = "sensitive"
         if key == "salary_history":
-            out["note"] = ("salary history: the user's call. Several US states and cities bar employers from asking; "
-                           "leave it blank if the form allows, never estimate it")
+            if is_uk(profile):
+                out["note"] = ("salary history: the user's call. UK employers may ask, and you may decline or give "
+                               "your expectation instead; leave it blank if the form allows, never estimate it")
+            else:
+                out["note"] = ("salary history: the user's call. Several US states and cities bar employers from "
+                               "asking; leave it blank if the form allows, never estimate it")
+        elif key == "convictions":
+            out["note"] = ("criminal record or DBS question: only the user answers this, on the form, in their own "
+                           "words; it is never saved or filled")
+        elif key == "ni_number":
+            out["note"] = ("National Insurance number: never stored or filled; employers need it after an offer, "
+                           "for payroll, and the user types it in themselves")
         elif value:
             out["answer"], out["source"] = pick_option(value, options) or value, "profile.self_identification"
             out["note"] = "voluntary: filled with the user's own saved choice"
@@ -201,7 +323,11 @@ def answer(question, profile, role_id=None, workspace="hunter", options=None):
     if kind == "role":
         cover = os.path.join(workspace, "covers", "%s.md" % role_id) if role_id else None
         out["status"] = "role-specific"
-        if value:
+        saved = (bank_for_role(load_bank(workspace), role_id) or {}).get("why_company") if key == "why_this_company" else None
+        if saved:
+            out["answer"], out["source"] = saved["text"], "%s (approved %s)" % (bank_path(workspace), saved["updated"])
+            out["note"] = "the user's approved answer for this company: the cover letter and interview use the same one"
+        elif value:
             out["answer"], out["source"] = value, "profile.answers.%s" % key
         elif cover and os.path.isfile(cover):
             out["source"] = cover
@@ -215,6 +341,13 @@ def answer(question, profile, role_id=None, workspace="hunter", options=None):
         out["note"] = ("upload the tailored resume for this role if one exists (hunter/resumes/%s.md, exported "
                        "to PDF)" % role_id) if role_id else "the user picks the file in the browser's upload dialog"
         return out
+    if value in (None, "") and key in GENERIC_KEYS:
+        saved = bank_get(load_bank(workspace), key)
+        if saved:
+            value = saved["text"]
+            out["answer"], out["status"] = value, "filled"
+            out["source"] = "%s (approved %s)" % (bank_path(workspace), saved["updated"])
+            return out
     if value in (None, ""):
         out["note"] = "missing from hunter/profile.json: ask the user, then save the answer there for next time"
         if key == "salary_expectation":
@@ -351,6 +484,54 @@ def render_fill(res):
     return "\n".join(lines) + "\n"
 
 
+def _read_text(path):
+    if not os.path.isfile(path):
+        raise ApplyError("no file at %s" % path)
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def bank_cmd(args):
+    bank = load_bank(args.workspace)
+    if args.bank_cmd == "set":
+        text = args.text if args.text is not None else _read_text(args.text_file)
+        e = bank_set(bank, args.key, text, args.approved, args.company, day(args.today) if args.today else None)
+        save_json(bank_path(args.workspace), bank)
+        print("Saved %s%s (%d words) to %s." % (args.key, " for %s" % args.company if args.company else "",
+                                                len(e["text"].split()), bank_path(args.workspace)))
+        return 0
+    if args.bank_cmd == "get":
+        e = bank_get(bank, args.key, args.company)
+        if not e:
+            print("No approved %s%s yet: draft one with the user, then `bank set`." % (
+                args.key, " for %s" % args.company if args.company else ""))
+            return 1
+        print(e["text"])
+        return 0
+    if args.bank_cmd == "list":
+        for k, e in sorted(bank["generic"].items()):
+            print("%-24s %s  %s" % (k, e.get("updated"), " ".join(e.get("text", "").split()[:12])))
+        for cslug, c in sorted(bank["companies"].items()):
+            for k, e in sorted(c.items()):
+                if isinstance(e, dict):
+                    print("%-24s %s  %s" % ("%s.%s" % (c.get("company", cslug), k), e.get("updated"),
+                                            " ".join(e.get("text", "").split()[:12])))
+        if not bank["generic"] and not bank["companies"]:
+            print("The answer bank is empty.")
+        return 0
+    if args.bank_cmd == "check":
+        new = bank_check(_read_text(args.draft), bank, args.company,
+                         _read_text(args.resume) if args.resume else "")
+        if new:
+            print("Figures in %s that are in neither the answer bank nor the resume: %s" % (args.draft, ", ".join(new)))
+            print("Check each one with the user before the draft goes anywhere.")
+            return 1
+        print("Every figure in %s is in the answer bank or the resume." % args.draft)
+        return 0
+    print("bank: set, get, list or check")
+    return 2
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Application answers, checklist and draft record. Never submits.")
     ap.add_argument("--profile", default="hunter/profile.json")
@@ -377,12 +558,32 @@ def main(argv=None):
     s.add_argument("--role", required=True)
     s.add_argument("--confirm", required=True, help="the user's words, for example \"I submitted it\"")
     s.add_argument("--date")
+    bk = sub.add_parser("bank", help="the user's approved answers, shared by cover letters, forms and interviews")
+    bsub = bk.add_subparsers(dest="bank_cmd")
+    b1 = bsub.add_parser("set")
+    b1.add_argument("--key", required=True)
+    b1.add_argument("--company")
+    g = b1.add_mutually_exclusive_group(required=True)
+    g.add_argument("--text")
+    g.add_argument("--text-file")
+    b1.add_argument("--approved", required=True, help="the user's words approving this answer")
+    b1.add_argument("--today")
+    b2 = bsub.add_parser("get")
+    b2.add_argument("--key", required=True)
+    b2.add_argument("--company")
+    bsub.add_parser("list")
+    b4 = bsub.add_parser("check", help="figures in a draft that are in neither the bank nor the resume")
+    b4.add_argument("draft")
+    b4.add_argument("--company")
+    b4.add_argument("--resume")
     args = ap.parse_args(argv)
     if not args.cmd:
         ap.print_help()
         return 2
     profile = load_json(args.profile)
     try:
+        if args.cmd == "bank":
+            return bank_cmd(args)
         if args.cmd in ("answer", "fill") and profile is None:
             raise ApplyError("no %s: copy skills/hunter-apply/profile.example.json there and fill it in with the "
                              "user's own answers" % args.profile)

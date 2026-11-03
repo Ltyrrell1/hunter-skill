@@ -12,6 +12,8 @@ source on every line. Claude and the user fill the "(fill in)" lines.
     python3 brief.py loop --company Amazon
     python3 brief.py sec --ticker NFLX --days 120
     python3 brief.py feeds --company NVIDIA --days 14
+    python3 brief.py build --company Monzo --uk --role "Software Engineer"   # UK: Companies House
+    python3 brief.py ch --company "Monzo Bank" --ch-number 09446231
 
 Sources:
   SEC EDGAR submissions  https://data.sec.gov/submissions/CIK##########.json
@@ -22,9 +24,19 @@ SEC asks every script to send a User-Agent with a name and email: pass
 "sec_user_agent" in hunter/profile.json. Without one the SEC part is skipped
 and the brief says so. Offline: --offline DIR reads submissions-CIK*.json,
 company_tickers.json and feed-<id>.xml from DIR (the tests use it).
+
+UK companies (public or private) file with Companies House:
+  Companies House API   https://api.company-information.service.gov.uk (free key, sent as Basic auth)
+The key comes from --ch-key or COMPANIES_HOUSE_API_KEY (register an application at
+developer.company-information.service.gov.uk). With --uk the company is found by name; with
+--ch-number (or "ch_number" in companies.json) it is used as given. The brief then carries the
+company's status, age, registered office, SIC codes, accounts dates, current directors and recent
+filings, every line linked to its Companies House page. Offline: ch-search.json,
+ch-company-<number>.json, ch-officers-<number>.json and ch-filings-<number>.json in DIR.
 """
 
 import argparse
+import base64
 import datetime as _dt
 import email.utils
 import gzip
@@ -45,7 +57,9 @@ SUBMISSIONS = "https://data.sec.gov/submissions/CIK%s.json"
 TICKERS = "https://www.sec.gov/files/company_tickers.json"
 ARCHIVE = "https://www.sec.gov/Archives/edgar/data/%d/%s/%s"
 EDGAR_PAGE = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s"
-FEED_UA = "hunter-skill/1.0 (company research; +https://github.com/Jakeschincariol/hunter-skill)"
+FEED_UA = "hunter-skill/1.1 (company research; +https://github.com/Ltyrrell1/hunter-skill)"
+CH_API = "https://api.company-information.service.gov.uk"
+CH_PAGE = "https://find-and-update.company-information.service.gov.uk/company/%s"
 PLACEHOLDERS = ("you@example.com", "admin@example.com")
 
 ITEMS_8K = {
@@ -100,7 +114,7 @@ class Fetcher(object):
         self.pause = pause
         self._last = 0.0
 
-    def get(self, url, name, sec=False):
+    def get(self, url, name, sec=False, headers=None):
         if self.offline:
             path = os.path.join(self.offline, name)
             if not os.path.isfile(path):
@@ -113,8 +127,9 @@ class Fetcher(object):
         if gap < self.pause:
             time.sleep(self.pause - gap)
         self._last = time.time()
-        req = urllib.request.Request(url, headers={"User-Agent": self.sec_ua if sec else FEED_UA,
-                                                   "Accept-Encoding": "gzip"})
+        hdrs = {"User-Agent": self.sec_ua if sec else FEED_UA, "Accept-Encoding": "gzip"}
+        hdrs.update(headers or {})
+        req = urllib.request.Request(url, headers=hdrs)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
@@ -298,9 +313,138 @@ def loop_lines(entry):
     return lines
 
 
+# ---------------------------------------------------------------- Companies House (UK)
+
+def ch_key(cli=None):
+    key = (cli or os.environ.get("COMPANIES_HOUSE_API_KEY") or "").strip()
+    return key or None
+
+
+def _ch_get(fetcher, path, name, key):
+    auth = "Basic " + base64.b64encode((key or "") .encode("utf-8") + b":").decode("ascii")
+    data = fetcher.get(CH_API + path, name, headers={"Authorization": auth, "Accept": "application/json"})
+    return json.loads(data.decode("utf-8"))
+
+
+def _norm_name(n):
+    n = re.sub(r"[^a-z0-9 ]", " ", (n or "").lower())
+    return " ".join(w for w in n.split() if w not in ("ltd", "limited", "plc", "llp", "the", "uk", "group"))
+
+
+def ch_find(fetcher, company, key):
+    """The best active match for a company name: (number, title) or (None, reason)."""
+    q = urllib.request.quote(company)
+    res = _ch_get(fetcher, "/search/companies?q=%s&items_per_page=10" % q, "ch-search.json", key)
+    items = res.get("items") or []
+    if not items:
+        return None, "no company called %s on Companies House" % company
+    want = _norm_name(company)
+    def rank(it):
+        title = _norm_name(it.get("title"))
+        return (it.get("company_status") != "active", title != want, not title.startswith(want), len(title))
+    best = sorted(items, key=rank)[0]
+    return best.get("company_number"), best.get("title")
+
+
+def _address(a):
+    a = a or {}
+    parts = [a.get(k) for k in ("address_line_1", "address_line_2", "locality", "region", "postal_code", "country")]
+    return ", ".join(p for p in parts if p)
+
+
+def _describe(slug_text):
+    return (slug_text or "").replace("-", " ").strip()
+
+
+def ch_summary(company, officers, filings, today, days=365):
+    num = company.get("company_number")
+    page = CH_PAGE % num
+    accounts = company.get("accounts") or {}
+    last = (accounts.get("last_accounts") or {})
+    active = [o for o in (officers or {}).get("items", []) if not o.get("resigned_on")]
+    directors = [{"name": o.get("name"), "role": o.get("officer_role"), "appointed": o.get("appointed_on"),
+                  "occupation": o.get("occupation")} for o in active if o.get("officer_role") in
+                 ("director", "corporate-director", "llp-designated-member", "llp-member")][:10]
+    recent = []
+    for f in (filings or {}).get("items", []):
+        d = parse_day(f.get("date"))
+        if d and (today - d).days > days:
+            continue
+        recent.append({"date": f.get("date"), "category": f.get("category"), "type": f.get("type"),
+                       "about": _describe(f.get("description")),
+                       "url": "%s/filing-history/%s/document?format=pdf&download=0" % (page, f.get("transaction_id"))
+                       if f.get("transaction_id") else page + "/filing-history"})
+    accounts_filed = next((f for f in recent if f["category"] == "accounts"), None)
+    created = parse_day(company.get("date_of_creation"))
+    return {
+        "name": company.get("company_name"), "number": num, "status": company.get("company_status"),
+        "type": company.get("type"), "created": company.get("date_of_creation"),
+        "age_years": (today - created).days // 365 if created else None,
+        "office": _address(company.get("registered_office_address")),
+        "sic": company.get("sic_codes") or [], "last_accounts": last.get("made_up_to"),
+        "accounts_type": last.get("type"), "next_accounts_due": (accounts.get("next_accounts") or {}).get("due_on")
+        or accounts.get("next_due"),
+        "directors": directors, "filings": recent[:10], "accounts_filing": accounts_filed,
+        "page": page, "officers_page": page + "/officers", "filings_page": page + "/filing-history",
+    }
+
+
+def fetch_ch(fetcher, company=None, number=None, key=None, today=None, days=365):
+    if not number:
+        number, title = ch_find(fetcher, company, key)
+        if not number:
+            raise BriefError(title)
+    number = str(number).strip().upper()
+    prof = _ch_get(fetcher, "/company/%s" % number, "ch-company-%s.json" % number, key)
+    try:
+        officers = _ch_get(fetcher, "/company/%s/officers?items_per_page=35" % number,
+                           "ch-officers-%s.json" % number, key)
+    except BriefError:
+        officers = {}
+    try:
+        filings = _ch_get(fetcher, "/company/%s/filing-history?items_per_page=25" % number,
+                          "ch-filings-%s.json" % number, key)
+    except BriefError:
+        filings = {}
+    return ch_summary(prof, officers, filings, today or _dt.date.today(), days)
+
+
+def ch_lines(ch):
+    lines = ["- %s, company number %s (%s, %s), incorporated %s%s. Registered office: %s. Source: %s" % (
+        ch["name"], ch["number"], ch["status"] or "status n/a", (ch["type"] or "type n/a").replace("-", " "),
+        ch["created"] or "n/a", " (%d years ago)" % ch["age_years"] if ch["age_years"] is not None else "",
+        ch["office"] or "n/a", ch["page"])]
+    if ch["sic"]:
+        lines.append("- Nature of business (SIC codes): %s. Look each code up in the ONS SIC 2007 list." %
+                     ", ".join(ch["sic"]))
+    if ch["last_accounts"]:
+        lines.append("- Accounts: last made up to %s (%s); next due %s. %s" % (
+            ch["last_accounts"], (ch["accounts_type"] or "type n/a").replace("-", " "),
+            ch["next_accounts_due"] or "n/a",
+            ("Latest accounts filing: %s" % ch["accounts_filing"]["url"]) if ch["accounts_filing"] else
+            "Filings: %s" % ch["filings_page"]))
+        lines.append("- Full or group accounts carry the strategic report: what the company does, its "
+                     "turnover, headcount and risks. Small or micro-entity accounts say much less.")
+    if ch["status"] and ch["status"] != "active":
+        lines.append("- WARNING: Companies House lists this company as %s. Check you have the right one." % ch["status"])
+    if ch["directors"]:
+        names = ["%s (%s, since %s)" % (d["name"], (d["role"] or "").replace("-", " "), d["appointed"] or "n/a")
+                 for d in ch["directors"]]
+        lines.append("- Current directors (public register): %s. %s" % ("; ".join(names), ch["officers_page"]))
+    lines.append("- (fill in) Two or three lines in your own words from the strategic report, including where "
+                 "this team fits.")
+    return lines
+
+
+def ch_news_lines(ch):
+    return ["- %s Companies House filing: %s %s" % (f["date"], f["about"], f["url"]) for f in ch["filings"][:6]]
+
+
 # ---------------------------------------------------------------- the brief
 
-def business_lines(sec, info, notes):
+def business_lines(sec, info, notes, ch=None):
+    if not sec and ch:
+        return ch_lines(ch)
     if not sec:
         lines = ["(fill in) No SEC filings in this brief. %s" % (
             "Private companies do not file with the SEC: use the company's own about, press and blog pages."
@@ -324,8 +468,10 @@ def business_lines(sec, info, notes):
     return lines
 
 
-def news_lines(sec, posts, days):
+def news_lines(sec, posts, days, ch=None):
     lines = []
+    if ch:
+        lines += ch_news_lines(ch)
     if sec:
         earn = [e for e in sec["events"] if "2.02" in e.get("items", [])]
         for e in sec["events"][:8]:
@@ -343,12 +489,14 @@ def news_lines(sec, posts, days):
     return lines
 
 
-def build(company, role, team, today, info, loops_entry, sec, posts, notes, days, candidate=None):
+def build(company, role, team, today, info, loops_entry, sec, posts, notes, days, candidate=None, ch=None):
     with open(TEMPLATE, encoding="utf-8") as fh:
         text = fh.read()
     sources = []
     if sec:
         sources.append("- SEC EDGAR filings for %s: %s" % (sec["name"], sec["edgar"]))
+    if ch:
+        sources.append("- Companies House record for %s (%s): %s" % (ch["name"], ch["number"], ch["page"]))
     for f in (info or {}).get("feeds", []):
         sources.append("- %s (feed): %s" % (f["name"], f["url"]))
     if (info or {}).get("careers"):
@@ -370,8 +518,8 @@ def build(company, role, team, today, info, loops_entry, sec, posts, notes, days
     values = {
         "company": company, "role": role or "(fill in)", "team": team or "the team",
         "today": today.isoformat(), "for_line": " for %s" % candidate if candidate else "",
-        "business": "\n".join(business_lines(sec, info, notes)),
-        "news": "\n".join(news_lines(sec, posts, days)),
+        "business": "\n".join(business_lines(sec, info, notes) if sec else business_lines(sec, info, notes, ch)),
+        "news": "\n".join(news_lines(sec, posts, days, ch)),
         "culture": "\n".join(culture_lines),
         "team_section": "\n".join(team_lines),
         "loop": "\n".join(loop_lines(loops_entry)),
@@ -417,10 +565,23 @@ def gather(args, need_sec=True, need_feeds=True):
                 sec = fetch_sec(fetcher, info.get("cik"), info.get("ticker"), today, args.days)
             except BriefError as exc:
                 notes.append("SEC: %s" % exc)
-    elif need_sec:
+    elif need_sec and not (getattr(args, "uk", False) or getattr(args, "ch_number", None) or info.get("ch_number")):
         notes.append("%s is not in companies.json and no --ticker was given: no SEC filings "
-                     "(private companies do not file)" % name)
+                     "(private companies do not file; for a UK company add --uk)" % name)
+    ch = None
+    number = getattr(args, "ch_number", None) or info.get("ch_number")
+    if need_sec and (number or getattr(args, "uk", False)):
+        key = ch_key(getattr(args, "ch_key", None))
+        if not key and not args.offline:
+            notes.append("Companies House skipped: set COMPANIES_HOUSE_API_KEY (a free key from "
+                         "developer.company-information.service.gov.uk) or pass --ch-key")
+        else:
+            try:
+                ch = fetch_ch(fetcher, args.company, number, key, today, max(args.days, 365))
+            except BriefError as exc:
+                notes.append("Companies House: %s" % exc)
     posts = fetch_feeds(fetcher, feeds, today, days=min(args.days, 60), notes=notes) if need_feeds else []
+    args._ch = ch
     return name, info, today, sec, posts, notes
 
 
@@ -442,6 +603,9 @@ def main(argv=None):
             p.add_argument("--feed", action="append", default=[], help="extra RSS/Atom feed URL")
             p.add_argument("--user-agent", help="SEC User-Agent: \"Your Name you@example.com\"")
             p.add_argument("--profile", default="hunter/profile.json")
+            p.add_argument("--uk", action="store_true", help="also look the company up on Companies House")
+            p.add_argument("--ch-number", help="Companies House company number (skips the name search)")
+            p.add_argument("--ch-key", help="Companies House API key (default: COMPANIES_HOUSE_API_KEY)")
 
     b = sub.add_parser("build", help="write hunter/companies/<company>.md")
     common(b)
@@ -457,6 +621,8 @@ def main(argv=None):
     common(s)
     f = sub.add_parser("feeds", help="recent posts from the company's own blogs")
     common(f)
+    c = sub.add_parser("ch", help="Companies House facts, directors and filings only (UK)")
+    common(c)
 
     args = ap.parse_args(argv)
     if not args.cmd:
@@ -483,6 +649,19 @@ def main(argv=None):
                 print("note: %s" % n)
         return 0 if sec else 1
 
+    if args.cmd == "ch":
+        args.uk = True
+        name, info, today, _, _, notes = gather(args, need_feeds=False)
+        ch = args._ch
+        if args.json:
+            print(json.dumps({"companies_house": ch, "notes": notes}, indent=2))
+        else:
+            if ch:
+                print("\n".join(ch_lines(ch)[:-1] + ch_news_lines(ch)))
+            for n in notes:
+                print("note: %s" % n)
+        return 0 if ch else 1
+
     if args.cmd == "feeds":
         name, info, today, _, posts, notes = gather(args, need_sec=False)
         if args.json:
@@ -500,7 +679,8 @@ def main(argv=None):
     name, info, today, sec, posts, notes = gather(args)
     _, entry = find(loops, args.company)
     candidate = args.candidate or (load_json(args.profile) or {}).get("name")
-    text = build(name, args.role, args.team, today, info, entry, sec, posts, notes, args.days, candidate)
+    text = build(name, args.role, args.team, today, info, entry, sec, posts, notes, args.days, candidate,
+                 ch=args._ch)
     if args.stdout:
         sys.stdout.write(text)
         return 0
@@ -515,7 +695,8 @@ def main(argv=None):
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(text)
     print("Wrote %s: %d filings, %d blog posts, %d loop notes. Fill the (fill in) lines from the sources." % (
-        out, (1 if sec and sec["annual"] else 0) + (len(sec["events"]) if sec else 0), len(posts),
+        out, (1 if sec and sec["annual"] else 0) + (len(sec["events"]) if sec else 0)
+        + (len(args._ch["filings"]) if args._ch else 0), len(posts),
         len((entry or {}).get("notes", []))))
     for n in notes:
         print("note: %s" % n)

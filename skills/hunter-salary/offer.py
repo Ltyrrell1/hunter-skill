@@ -8,6 +8,13 @@ Standard library only.
     python3 offer.py bench   hunter/offers/google.json --bench hunter/offers/bench.json
     python3 offer.py counter hunter/offers/google.json --bench hunter/offers/bench.json \
         --competing hunter/offers/amazon.json --floor 180000 --me "Jordan Reyes"
+    python3 offer.py uk --gross 45000 --student-loan plan2 --pension-pct 5 --pension sacrifice
+    python3 offer.py uk --offer hunter/offers/monzo.json --scotland
+
+UK TAKE-HOME (uk command): income tax (rest of UK or Scottish bands), employee Class 1 National
+Insurance, student and postgraduate loan repayments and an optional pension, by HMRC's published
+rates in uk-tax.json (source and URL printed with every result). It assumes a standard 1257L tax
+code, one job and annual earnings spread evenly. It is an estimate, not your payslip.
 
 TOTAL COMPENSATION, year by year (years = the vesting schedule's length, 4 by default)
 
@@ -39,6 +46,7 @@ A counter can be declined. No outcome is guaranteed. Not financial, tax or legal
 """
 
 import argparse
+import datetime as _dt
 import json
 import math
 import os
@@ -46,7 +54,10 @@ import sys
 import urllib.request
 
 BLS_API = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
-UA = "hunter-skill/1.0 (+https://github.com/Jakeschincariol/hunter-skill)"
+UA = "hunter-skill/1.1 (+https://github.com/Ltyrrell1/hunter-skill)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+UK_TAX = os.path.join(HERE, "uk-tax.json")
+SYMBOLS = {"USD": "$", "CAD": "$", "AUD": "$", "$": "$", "GBP": "\u00a3", "EUR": "\u20ac"}
 SCHEDULES = {
     "even-4": [25, 25, 25, 25],
     "back-loaded": [5, 15, 40, 40],
@@ -90,7 +101,8 @@ def money(v, cur="USD"):
         return "n/a"
     sign = "-" if v < 0 else ""
     s = "{:,.0f}".format(abs(v))
-    return "%s$%s" % (sign, s) if cur in ("USD", "CAD", "AUD", "$") else "%s%s %s" % (sign, s, cur)
+    sym = SYMBOLS.get(cur)
+    return "%s%s%s" % (sign, sym, s) if sym else "%s%s %s" % (sign, s, cur)
 
 
 def round_up(v, step=1000):
@@ -466,6 +478,114 @@ def render_counter(c, offer, me=None, recruiter=None, share_competing=False):
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------- OEWS year
+
+def default_oews_year(today=None):
+    """The latest May OEWS reference year that BLS has published. BLS releases the May
+    estimates of year Y around the end of March or in April of year Y+1, so before
+    15 April the newest complete set is two years back."""
+    today = today or _dt.date.today()
+    return today.year - 1 if (today.month, today.day) >= (4, 15) else today.year - 2
+
+
+# ---------------------------------------------------------------- UK take-home
+
+def uk_rates(year=None, path=UK_TAX):
+    data = read_json(path)["years"]
+    if year is None:
+        year = sorted(data)[-1]
+    if year not in data:
+        raise OfferError("no UK rates for tax year %s in uk-tax.json (have: %s)" % (year, ", ".join(sorted(data))))
+    r = dict(data[year])
+    r["tax_year"] = year
+    return r
+
+
+def _banded(amount, bands):
+    tax, lower = 0.0, 0.0
+    for upper, rate in bands:
+        top = amount if upper is None else min(amount, upper)
+        if top > lower:
+            tax += (top - lower) * rate
+        if upper is None or amount <= upper:
+            break
+        lower = upper
+    return tax
+
+
+def uk_take_home(gross, rates, scotland=False, loans=None, pension_pct=0.0, pension="sacrifice"):
+    """Annual UK employee deductions on `gross` (salary plus any bonus counted as pay).
+    pension: "sacrifice" (comes off before tax, NI and loans), "net-pay" (before income tax only)
+    or "relief-at-source" (paid from take-home with 20% basic-rate relief added by the provider)."""
+    gross = float(gross)
+    if gross < 0:
+        raise OfferError("gross pay cannot be negative")
+    if pension not in ("sacrifice", "net-pay", "relief-at-source"):
+        raise OfferError("pension must be sacrifice, net-pay or relief-at-source")
+    contrib = gross * float(pension_pct or 0) / 100.0
+    ni_pay = gross - contrib if pension == "sacrifice" else gross
+    tax_pay = gross - contrib if pension in ("sacrifice", "net-pay") else gross
+    allowance = float(rates["personal_allowance"])
+    over = tax_pay - float(rates.get("taper_start", 100000))
+    if pension == "relief-at-source":
+        over -= contrib  # gross contributions reduce adjusted net income
+    if over > 0:
+        allowance = max(0.0, allowance - over / 2.0)
+    taxable = max(0.0, tax_pay - allowance)
+    bands = rates["income_tax"]["scotland" if scotland else "rUK"]
+    tax = _banded(taxable, bands)
+    n = rates["ni"]
+    ni = max(0.0, min(ni_pay, n["upper_earnings_limit"]) - n["primary_threshold"]) * n["main_rate"] \
+        + max(0.0, ni_pay - n["upper_earnings_limit"]) * n["upper_rate"]
+    loan_rows = []
+    for plan in loans or []:
+        key = plan.lower().replace(" ", "").replace("-", "").replace("_", "")
+        key = {"pgl": "postgrad", "postgraduate": "postgrad"}.get(key, key)
+        if key not in rates["student_loans"]:
+            raise OfferError("unknown student loan plan %r (plan1, plan2, plan4, plan5, postgrad)" % plan)
+        l = rates["student_loans"][key]
+        loan_rows.append({"plan": key, "repay": max(0.0, ni_pay - l["threshold"]) * l["rate"],
+                          "threshold": l["threshold"]})
+    undergrad = [r for r in loan_rows if r["plan"] != "postgrad"]
+    if len(undergrad) > 1:
+        raise OfferError("give one undergraduate plan (plus postgrad if you have it); HMRC collects one plan at a time")
+    loans_total = sum(r["repay"] for r in loan_rows)
+    # what leaves your pay packet for the pension: all of it, except relief at source,
+    # where the provider claims the 20% basic-rate relief and adds it to the pot
+    from_pay = contrib * 0.8 if pension == "relief-at-source" else contrib
+    net = gross - from_pay - tax - ni - loans_total
+    r2 = lambda v: round(v, 2)
+    return {
+        "tax_year": rates["tax_year"], "region": "Scotland" if scotland else "England, Wales and Northern Ireland",
+        "gross": r2(gross), "pension": {"pct": float(pension_pct or 0), "method": pension, "into_pot": r2(contrib)},
+        "personal_allowance": r2(allowance), "taxable": r2(taxable), "income_tax": r2(tax), "ni": r2(ni),
+        "student_loans": [{"plan": r["plan"], "repay": r2(r["repay"])} for r in loan_rows],
+        "take_home": r2(net), "monthly": r2(net / 12.0),
+        "effective_rate_pct": r2(100.0 * (tax + ni + loans_total) / gross) if gross else 0.0,
+        "source": rates["source"], "url": rates["url"],
+    }
+
+
+def render_uk(r):
+    g = lambda v, minus=False: (("-" if minus else "") + money(v, "GBP")).rjust(11)
+    row = lambda label, v, minus=False: "  %-24s%s" % (label, g(v, minus))
+    out = ["UK take-home, tax year %s (%s)" % (r["tax_year"], r["region"]), row("gross pay", r["gross"])]
+    if r["pension"]["pct"]:
+        out.append(row("pension %g%% (%s)" % (r["pension"]["pct"], r["pension"]["method"]),
+                       r["pension"]["into_pot"]) + "  into your pot")
+    out.append(row("personal allowance", r["personal_allowance"]))
+    out.append(row("income tax", r["income_tax"], True))
+    out.append(row("National Insurance", r["ni"], True))
+    for l in r["student_loans"]:
+        out.append(row("loan (%s)" % l["plan"], l["repay"], True))
+    out.append(row("take-home", r["take_home"]) + "  a year, %s a month" % money(r["monthly"], "GBP"))
+    out.append("  Tax, NI and loans take %g%% of gross." % r["effective_rate_pct"])
+    out.append("")
+    out.append("Rates: %s (%s). Assumes tax code 1257L, one job, pay spread evenly over the year." % (r["source"], r["url"]))
+    out.append("An estimate, not your payslip. Not financial, tax or legal advice.")
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------- CLI
 
 def profile_floor(path):
@@ -493,7 +613,8 @@ def main(argv=None):
     sp = sub.add_parser("bls", help="OEWS wage percentiles from the BLS API (or --offline FILE)")
     sp.add_argument("--soc", required=True, help="occupation code, e.g. 15-1252 (Software Developers)")
     sp.add_argument("--area", default="national", help="national, state:CA or msa:41940")
-    sp.add_argument("--year", type=int, default=2025, help="OEWS reference year (May of that year)")
+    sp.add_argument("--year", type=int, default=None,
+                    help="OEWS reference year (May of that year); default: the latest one BLS has published")
     sp.add_argument("--occupation", help="name for the label")
     sp.add_argument("--area-name", help="name for the label")
     sp.add_argument("--offline", help="a saved BLS API response (JSON) instead of the network")
@@ -512,6 +633,19 @@ def main(argv=None):
     sp.add_argument("--recruiter")
     sp.add_argument("--share-competing", action="store_true", help="name the competing offer in the script (only if it is real and you are fine sharing it)")
     sp.add_argument("--json", action="store_true")
+    sp = sub.add_parser("uk", help="UK take-home pay: income tax, NI, student loans, pension")
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--gross", type=float, help="annual gross pay in GBP")
+    g.add_argument("--offer", help="an offer file: uses base plus bonus target for year 1")
+    sp.add_argument("--no-bonus", action="store_true", help="with --offer, leave the bonus target out")
+    sp.add_argument("--scotland", action="store_true", help="Scottish income tax bands (you live in Scotland)")
+    sp.add_argument("--student-loan", action="append", default=[], help="plan1, plan2, plan4, plan5 or postgrad (repeatable)")
+    sp.add_argument("--pension-pct", type=float, default=0.0, help="your pension contribution as a percent of pay")
+    sp.add_argument("--pension", default="sacrifice", help="sacrifice, net-pay or relief-at-source (default sacrifice)")
+    sp.add_argument("--tax-year", help="e.g. 2026-27 (default: the newest in uk-tax.json)")
+    sp.add_argument("--profile", default=os.path.join("hunter", "profile.json"),
+                    help="reads student_loan and tax_region (scotland) when the flags are not given")
+    sp.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     if not a.cmd:
         p.print_help()
@@ -525,7 +659,23 @@ def main(argv=None):
             ts = [yearly(read_json(x)) for x in a.offers]
             print(json.dumps(ts, indent=2) if a.json else render_compare(ts))
             return 0
+        if a.cmd == "uk":
+            gross = a.gross
+            if a.offer:
+                t = yearly(read_json(a.offer))
+                y1 = t["years"][0]
+                gross = y1["base"] + (0 if a.no_bonus else y1["bonus"])
+            prof = read_json(a.profile) if a.profile and os.path.exists(a.profile) else {}
+            loans = a.student_loan or prof.get("student_loan") or []
+            if isinstance(loans, str):
+                loans = [loans]
+            scot = a.scotland or str(prof.get("tax_region") or "").lower() == "scotland"
+            r = uk_take_home(gross, uk_rates(a.tax_year), scot, loans, a.pension_pct, a.pension)
+            print(json.dumps(r, indent=2) if a.json else render_uk(r))
+            return 0
         if a.cmd == "bls":
+            if a.year is None:
+                a.year = default_oews_year()
             ids = series_ids(a.soc, a.area)
             if a.offline:
                 resp = read_json(a.offline)

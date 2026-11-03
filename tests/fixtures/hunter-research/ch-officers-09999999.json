@@ -1,0 +1,9 @@
+{
+  "_note": "FICTIONAL test data in the shape of the Companies House officers API. These people do not exist.",
+  "items": [
+    {"name": "EXAMPLE, Alex", "officer_role": "director", "appointed_on": "2019-05-01", "occupation": "Chief Executive"},
+    {"name": "SAMPLE, Robin", "officer_role": "director", "appointed_on": "2022-01-10", "occupation": "Chief Financial Officer"},
+    {"name": "FORMER, Sam", "officer_role": "director", "appointed_on": "2015-02-06", "resigned_on": "2020-03-01"},
+    {"name": "EXAMPLE SECRETARIES LIMITED", "officer_role": "corporate-secretary", "appointed_on": "2015-02-06"}
+  ]
+}

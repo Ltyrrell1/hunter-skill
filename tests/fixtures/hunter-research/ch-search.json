@@ -1,0 +1,8 @@
+{
+  "_note": "FICTIONAL test data in the shape of the Companies House search API. Not a real company.",
+  "items": [
+    {"title": "EXAMPLE BANK HOLDINGS LIMITED", "company_number": "11111111", "company_status": "dissolved"},
+    {"title": "EXAMPLE BANK LIMITED", "company_number": "09999999", "company_status": "active"},
+    {"title": "EXAMPLE BANK SERVICES LIMITED", "company_number": "12222222", "company_status": "active"}
+  ]
+}

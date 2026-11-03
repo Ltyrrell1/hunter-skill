@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+# a user's own job hunt, if they run the tools from a clone of this repo
+/hunter/

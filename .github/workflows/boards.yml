@@ -1,0 +1,20 @@
+name: job boards
+
+# Job board tokens change quietly when a company switches provider or renames its board.
+# This re-checks every automatic board in boards.json once a week, one small request each,
+# and fails (so GitHub emails you) when one stops answering.
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check every board live
+        run: python skills/hunter-scout/jobs.py check

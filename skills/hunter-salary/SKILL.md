@@ -9,8 +9,10 @@ description: >-
   job postings with their URL, and writes a counter range and a polite script
   that cites every number. Never invents a market number. Use when the user
   says "I got an offer", "negotiate my salary", "is this offer good", "compare
-  offers", "counter offer", "what should I ask for", "total compensation",
-  "RSU vesting", or when a role reaches the offer stage.
+  offers", "counter offer", "what should I ask for", "total compensation", "RSU
+  vesting", or when a role reaches the offer stage. For UK offers it works out
+  take-home pay after tax, National Insurance, student loan and pension
+  ("take-home", "after tax", "UK salary").
 argument-hint: "[offer file]"
 ---
 
@@ -119,6 +121,33 @@ not mentioned unless Jordan passes `--share-competing`.
 The fictional Amazon offer (back-loaded 5/15/40/40 with a $45,000 and $35,000
 sign-on) is $230,000 in year 1 and $255,000 in years 3 and 4; over four years the
 Google offer is higher, so Jordan's counter rests on the BLS numbers, not on Amazon.
+
+## In the UK: take-home pay
+
+UK offers are usually compared on base salary and pension, then on what lands
+in the bank. `offer.py uk` works that out from HMRC's published rates
+(`uk-tax.json`, which names its source and tax year): income tax on the rest-of-UK
+or Scottish bands, employee National Insurance, student loan plans 1, 2, 4, 5
+and postgraduate, and a pension by salary sacrifice, net pay or relief at
+source.
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/offer.py" uk --gross 45000 --student-loan plan2 --pension-pct 5
+python3 "${CLAUDE_SKILL_DIR}/offer.py" uk --offer hunter/offers/monzo.json --scotland
+```
+
+`--offer` uses year one's base plus the bonus target (`--no-bonus` leaves it
+out). The profile's `student_loan` list and `"tax_region": "scotland"` are read
+when the flags are not given. Ask which loan plan the user has; never guess it.
+Say what the tool assumes (tax code 1257L, one job, pay spread evenly) and that
+it is an estimate, not a payslip. Set `"currency": "GBP"` in the offer file.
+
+UK benchmarks: BLS covers the US only. For the UK, add numbers the user can cite
+to the bench file as `posting_range` (a range printed in a UK posting, with its
+URL) or as `base` percentiles from the ONS Annual Survey of Hours and Earnings
+(ASHE) tables for the occupation, with the table's URL. The same rule applies:
+no source, no number. When a new tax year starts (6 April), add its rates to
+`uk-tax.json` from HMRC's "Rates and thresholds for employers" page.
 
 ## What it never does
 

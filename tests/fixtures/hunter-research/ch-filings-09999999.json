@@ -1,0 +1,8 @@
+{
+  "_note": "FICTIONAL test data in the shape of the Companies House filing history API.",
+  "items": [
+    {"date": "2026-07-20", "category": "accounts", "type": "AA", "description": "accounts-with-accounts-type-full", "transaction_id": "MzAwMDAwMDAwMWFkaXF6a2N4"},
+    {"date": "2026-02-14", "category": "confirmation-statement", "type": "CS01", "description": "confirmation-statement-with-no-updates", "transaction_id": "MzAwMDAwMDAwMmFkaXF6a2N4"},
+    {"date": "2022-01-12", "category": "officers", "type": "AP01", "description": "appoint-person-director-company-with-name-date", "transaction_id": "MzAwMDAwMDAwM2FkaXF6a2N4"}
+  ]
+}
