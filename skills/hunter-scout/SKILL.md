@@ -145,12 +145,13 @@ python3 "${CLAUDE_SKILL_DIR}/jobs.py" search --region UK --board "Acme=greenhous
 python3 "${CLAUDE_SKILL_DIR}/jobs.py" check --region UK             # confirm the UK tokens live
 ```
 
-The UK boards (Monzo, Google DeepMind, GoCardless, Cleo, Octopus Energy) were
-added from the companies' public job URLs; run `check --region UK` once to
+The UK boards (Monzo, Google DeepMind, GoCardless, Cleo, Octopus Energy, and for
+AI and data roles Isomorphic Labs, PolyAI and Auto Trader) were added from the
+companies' public job URLs; run `check --region UK` once to
 confirm them. Many US boards in the file hire in London too: name them with
 `--company` and the location score sorts it out. Big UK employers and
-graduate schemes often have no feed: Wise and Civil Service Jobs are listed as
-manual routes, and graduate schemes (banks, consultancies, the Civil Service
+graduate schemes often have no feed: Wise, Civil Service Jobs, Faculty, Sellafield
+Ltd, BAE Systems and Gradcracker are listed as manual routes, and graduate schemes (banks, consultancies, the Civil Service
 Fast Stream) open and close on fixed dates, so add each one to the pipeline
 with its deadline as the next date.
 

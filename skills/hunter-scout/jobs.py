@@ -49,6 +49,7 @@ EMDASH, ENDASH = chr(0x2014), chr(0x2013)  # built from code points: the repo ha
 GH_LIST = "https://boards-api.greenhouse.io/v1/boards/%s/jobs"
 GH_JOB = "https://boards-api.greenhouse.io/v1/boards/%s/jobs/%s"
 GH_BOARD = "https://boards-api.greenhouse.io/v1/boards/%s"
+GH_EU_HOST = "boards-api.eu.greenhouse.io"  # boards hosted on Greenhouse's EU servers (job-boards.eu.greenhouse.io)
 LEVER = "https://api.lever.co/v0/postings/%s?mode=json"
 ASHBY = "https://api.ashbyhq.com/posting-api/job-board/%s?includeCompensation=true"
 WORKDAY = "https://%s/wday/cxs/%s/%s/jobs"
@@ -61,12 +62,24 @@ TITLE_ALIASES = {
     "frontend engineer": ["front-end engineer", "frontend software engineer"],
     "machine learning engineer": ["ml engineer", "deep learning engineer"],
     "infrastructure engineer": ["platform engineer", "site reliability engineer", "sre"],
+    "ai engineer": ["applied ai engineer", "ai ml engineer", "ml ai engineer", "llm engineer", "genai engineer",
+                    "generative ai engineer", "ai software engineer", "machine learning engineer", "ml engineer",
+                    "ai developer"],
+    "data scientist": ["data science", "applied scientist", "ml scientist", "machine learning scientist",
+                       "decision scientist", "research data scientist"],
+    "data analyst": ["analytics analyst", "insight analyst", "insights analyst", "business intelligence analyst",
+                     "bi analyst"],
 }
 SKILL_ALIASES = {
     "go": ["golang"], "javascript": ["js"], "typescript": ["ts"], "kubernetes": ["k8s"],
     "postgresql": ["postgres"], "machine learning": ["ml"], "google cloud": ["gcp"],
     "aws": ["amazon web services"], "apis": ["api", "rest"], "distributed systems": ["distributed system"],
     "c++": ["cpp"],
+    "scikit-learn": ["sklearn"], "pytorch": ["torch"], "large language models": ["llm", "llms", "genai"],
+    "llms": ["llm", "large language models", "genai"], "numpy": ["numerical python"],
+    "data visualisation": ["data visualization", "dataviz"], "statistics": ["statistical", "statistical modelling",
+                                                                            "statistical modeling"],
+    "natural language processing": ["nlp"], "retrieval-augmented generation": ["rag"],
 }
 US_STATES = ("alabama alaska arizona arkansas california colorado connecticut delaware florida georgia "
              "hawaii idaho illinois indiana iowa kansas kentucky louisiana maine maryland massachusetts "
@@ -284,6 +297,17 @@ def _job(board, source_id, title, location, url, posted, text="", remote=False, 
     return job
 
 
+def gh_get(fetcher, board, url, name):
+    """A Greenhouse call. Boards marked "eu": true live on Greenhouse's EU servers: the main
+    host is tried first and the EU host if that fails."""
+    if not board.get("eu"):
+        return fetcher.get(url, name)
+    try:
+        return fetcher.get(url, name)
+    except ScoutError:
+        return fetcher.get(url.replace("boards-api.greenhouse.io", GH_EU_HOST), name)
+
+
 def from_greenhouse(board, data):
     out = []
     for j in data.get("jobs", []):
@@ -398,7 +422,7 @@ def fetch_board(fetcher, board, today, roles, details=10, notes=None, exclude=No
     kind, token = board["type"], board.get("token")
     try:
         if kind == "greenhouse":
-            jobs = from_greenhouse(board, fetcher.get(GH_LIST % token, "greenhouse-%s.json" % token))
+            jobs = from_greenhouse(board, gh_get(fetcher, board, GH_LIST % token, "greenhouse-%s.json" % token))
             # the list has no descriptions: fetch details for title matches only (newest first)
             need = [j for j in jobs if not j["_text"] and title_points(j["title"], roles)[0] >= 15
                     and not excluded(j["title"], exclude)]
@@ -406,7 +430,7 @@ def fetch_board(fetcher, board, today, roles, details=10, notes=None, exclude=No
             for j in need[:details]:
                 jid = j["_sid"]
                 try:
-                    one = fetcher.get(GH_JOB % (token, jid), "greenhouse-%s-%s.json" % (token, jid))
+                    one = gh_get(fetcher, board, GH_JOB % (token, jid), "greenhouse-%s-%s.json" % (token, jid))
                 except ScoutError:
                     continue
                 full = from_greenhouse(board, {"jobs": [one]})
@@ -836,7 +860,7 @@ def check_board(fetcher, b):
     """One small live call that proves the token resolves. Returns a line."""
     kind, token = b["type"], b.get("token")
     if kind == "greenhouse":
-        d = fetcher.get(GH_BOARD % token, "greenhouse-board-%s.json" % token)
+        d = gh_get(fetcher, b, GH_BOARD % token, "greenhouse-board-%s.json" % token)
         return "ok  greenhouse %-12s board name: %s" % (token, d.get("name"))
     if kind == "lever":
         d = fetcher.get(LEVER % token + "&limit=1", "lever-%s.json" % token)

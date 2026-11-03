@@ -165,7 +165,8 @@ class Matching(unittest.TestCase):
         res = ats.score("Skills\nSQL, Python, Airflow\n", read(JD_PLAIN), self.terms)
         self.assertEqual(res["weights"]["R"], 70)
         self.assertEqual(res["weights"]["P"], 0)
-        self.assertEqual([m["term"] for m in res["missing"]], ["data pipelines", "BigQuery"])
+        # "BigQuery or Snowflake" is one choice: both options are listed as the way to cover it
+        self.assertEqual([m["term"] for m in res["missing"]], ["data pipelines", "BigQuery", "Snowflake"])
 
     def test_today_only_changes_the_years_line(self):
         a = ats.score(read(AFTER), read(JD), self.terms, datetime.date(2026, 10, 15))

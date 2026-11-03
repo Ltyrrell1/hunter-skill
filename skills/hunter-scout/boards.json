@@ -349,6 +349,75 @@
       "careers": "https://www.civilservicejobs.service.gov.uk/",
       "why_manual": "Civil Service Jobs has no public JSON feed for scripts.",
       "route": "Search Civil Service Jobs yourself and save a search with email alerts. Fast Stream and graduate schemes open on fixed dates: put them in the pipeline with their deadline."
+    },
+    {
+      "company": "Isomorphic Labs",
+      "type": "greenhouse",
+      "token": "isomorphiclabs",
+      "regions": [
+        "UK"
+      ],
+      "note": "the token appears in the company's public job URLs (checked 2026-11-03); run `jobs.py check --region UK` for a live count"
+    },
+    {
+      "company": "PolyAI",
+      "type": "greenhouse",
+      "token": "polyai",
+      "eu": true,
+      "regions": [
+        "UK"
+      ],
+      "note": "the token appears in the company's public job URLs (checked 2026-11-03); run `jobs.py check --region UK` for a live count; hosted on Greenhouse's EU servers"
+    },
+    {
+      "company": "Auto Trader",
+      "type": "greenhouse",
+      "token": "autotrader",
+      "eu": true,
+      "regions": [
+        "UK"
+      ],
+      "note": "the token appears in the company's public job URLs (checked 2026-11-03); run `jobs.py check --region UK` for a live count; hosted on Greenhouse's EU servers (Manchester data science and engineering)"
+    },
+    {
+      "company": "Faculty",
+      "type": "manual",
+      "regions": [
+        "UK"
+      ],
+      "careers": "https://faculty.ai/careers",
+      "why_manual": "Faculty lists roles on its own site (faculty.ai) rather than a public Greenhouse, Lever or Ashby board.",
+      "route": "Search faculty.ai's careers pages yourself (Claude in Chrome can read them with you); it hires data scientists and ML engineers in London."
+    },
+    {
+      "company": "Sellafield Ltd",
+      "type": "manual",
+      "regions": [
+        "UK"
+      ],
+      "careers": "https://www.gradcracker.com/search/computing-technology/jobs-with-sellafield-ltd",
+      "why_manual": "No public JSON job feed.",
+      "route": "West Cumbria's biggest employer. Its graduate and data roles are listed on Gradcracker (link) and its own careers site; schemes open on fixed dates, so add each to the pipeline with its deadline."
+    },
+    {
+      "company": "BAE Systems",
+      "type": "manual",
+      "regions": [
+        "UK"
+      ],
+      "careers": "https://careers.baesystems.com/locations/uk/graduates/technology",
+      "why_manual": "No public JSON job feed.",
+      "route": "Graduate technology and data roles, including in the North West (Barrow, Lancashire). Search the graduate technology page or Gradcracker; schemes open on fixed dates."
+    },
+    {
+      "company": "Gradcracker",
+      "type": "manual",
+      "regions": [
+        "UK"
+      ],
+      "careers": "https://www.gradcracker.com/search/computing-technology/data-science-jobs-in-north-west",
+      "why_manual": "A graduate STEM job board, not one employer, and it has no public JSON feed.",
+      "route": "Search it for data science, AI and computing graduate roles by region (the link is the North West) and set up its job alerts."
     }
   ]
 }
