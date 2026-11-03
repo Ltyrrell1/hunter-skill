@@ -22,20 +22,6 @@ This fork's first release on top of The Hunter skill 1.0 by Jake Schincariol.
   (`uk-tax.json`), including Scottish bands, student loans and pensions. Pounds
   and euros print with their symbols.
 
-### AI and data science roles
-
-- Scout: AI engineer, data scientist and data analyst title variants (applied AI,
-  LLM, ML scientist, insight analyst and more) and AI skill aliases (LLMs, RAG, NLP).
-- UK AI and data boards: Isomorphic Labs, PolyAI and Auto Trader (Greenhouse, the
-  last two on Greenhouse's EU servers, which the scout now handles), plus manual
-  routes for Faculty, Sellafield Ltd, BAE Systems and Gradcracker.
-- Resume terms: LLMs, RAG, NLP, MLOps, evaluation, vector databases, Hugging Face,
-  time series, Bayesian methods, A/B testing, Databricks, dbt, a 2:1 degree, and
-  British spellings (modelling, visualisation).
-- Interview: 13 data science and AI engineering practice questions (statistics,
-  ML concepts, SQL and pandas, case study, RAG design, LLM evaluation, prompt
-  injection), marked community-reported.
-
 ### New
 
 - `pipeline.py export --format ics` (calendar) and `--format html` (dashboard).

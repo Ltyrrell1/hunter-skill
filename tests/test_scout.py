@@ -291,30 +291,6 @@ class UK(unittest.TestCase):
         s4, why4, _ = jobs.score(dict(base, location="Manchester, UK", remote=False), prof, today)
         self.assertTrue(any("relocating" in w for w in why4))
 
-    def test_ai_and_data_titles(self):
-        roles = ["AI Engineer", "Data Scientist"]
-        for title in ("Graduate Data Scientist", "Applied AI Engineer", "AI/ML Engineer", "LLM Engineer",
-                      "Junior Machine Learning Engineer", "Applied Scientist"):
-            self.assertEqual(jobs.title_points(title, roles)[0], 35, title)
-        self.assertTrue(jobs.skill_hits("Experience with LLMs and RAG", ["large language models"]))
-
-    def test_eu_greenhouse_boards_fall_back_to_the_eu_host(self):
-        class F(object):
-            def __init__(self):
-                self.urls = []
-
-            def get(self, url, name, body=None):
-                self.urls.append(url)
-                if "boards-api.eu.greenhouse.io" not in url:
-                    raise jobs.ScoutError("HTTP 404")
-                return {"name": "PolyAI"}
-        f = F()
-        line = jobs.check_board(f, {"company": "PolyAI", "type": "greenhouse", "token": "polyai", "eu": True})
-        self.assertIn("PolyAI", line)
-        self.assertEqual(len(f.urls), 2)
-        with self.assertRaises(jobs.ScoutError):
-            jobs.check_board(F(), {"company": "X", "type": "greenhouse", "token": "x"})
-
     def test_region_filter(self):
         doc = jobs.load_json(jobs.BOARDS)
         auto, manual, _ = jobs.pick_boards(doc["boards"], region="UK")
