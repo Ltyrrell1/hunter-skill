@@ -5,12 +5,13 @@ description: >-
   writes a one-page brief in hunter/companies/: the business from its own SEC
   filings (latest 10-K, 10-Q, recent 8-Ks with what each one is about), news
   from the company's own blogs, the culture in the company's own words, the
-  team the user would join, and the interview loop with a source on every
-  line (official prep pages for Google, Meta, NVIDIA, Netflix and Amazon,
-  everything else marked community-reported). Use when the user says
-  "research Google", "tell me about this company", "company brief", "prep me
-  for Meta", "what's their interview process", "what does this team do", or
-  before a coffee chat or interview.
+  team the user would join, and the interview loop with a source on every line
+  (official prep pages for Google, Meta, NVIDIA, Netflix and Amazon, everything
+  else marked community-reported). Use when the user says "research Google",
+  "tell me about this company", "company brief", "prep me for Meta", "what's
+  their interview process", "what does this team do", or before a coffee chat
+  or interview. For UK companies, public or private, it adds the Companies
+  House record ("Companies House", "UK company").
 argument-hint: "[company] [role]"
 ---
 
@@ -99,6 +100,28 @@ brainteasers and no AI tools, roughly 6 to 8 weeks; the coding, system design
 and "Googleyness and Leadership" split is labelled community-reported. Jordan
 fills in what the infrastructure team builds from the posting and the Cloud
 blog, then moves on to the connector.
+
+## In the UK: Companies House
+
+UK companies, private ones included, file with Companies House. With a free API
+key (register an application at developer.company-information.service.gov.uk
+and set `COMPANIES_HOUSE_API_KEY`), the brief adds the company's status, age,
+registered office, SIC codes, accounts dates, current directors and recent
+filings, each line linked to its Companies House page:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/brief.py" build --company Monzo --uk --role "Software Engineer"
+python3 "${CLAUDE_SKILL_DIR}/brief.py" ch --company "Monzo Bank" --ch-number 09446231
+```
+
+The name search picks the best active match; when it might be the wrong
+company (a group, a holding company, a dissolved namesake), confirm the number
+with the user and pass `--ch-number`. Full or group accounts carry the strategic
+report, the best plain account of what the business does and its risks: read it
+from the linked filing and quote numbers from it, never from memory. Directors
+are on the public register; treat them like any other public professional
+information and nothing more. Without a key the brief says Companies House was
+skipped; never guess the record.
 
 ## What it never does
 

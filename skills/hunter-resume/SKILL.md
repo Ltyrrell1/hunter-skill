@@ -3,15 +3,16 @@ name: hunter-resume
 description: >-
   Resume Writer. Rewrites your resume for each role so it reads like the job
   description, using only what is true: it mirrors the posting's own words for
-  skills you really have, moves buried results into strong bullets (a number,
-  a strong verb, one line), reorders for the role, and asks you about anything
+  skills you really have, moves buried results into strong bullets (a number, a
+  strong verb, one line), reorders for the role, and asks you about anything
   the posting wants that the resume does not show. Scores the match from 0 to
   100 with a published formula (minimum qualifications, preferred
   qualifications, bullet strength, sections) and runs a truth check that fails
   if the rewrite adds a number or a skill that was not in your original. Use
   when the user says "rewrite my resume", "tailor my resume", "ATS score",
   "beat the ATS", "match my resume to this job", "resume for Google", "improve
-  my bullets", or after /hunter-scout picks a role.
+  my bullets", or after /hunter-scout picks a role. In the UK it writes a CV
+  and checks UK conventions ("tailor my CV", "UK CV").
 argument-hint: "[role id or job URL]"
 ---
 
@@ -125,6 +126,24 @@ summary line:
 What keeps it at 96 and not 100 is honest: Jordan has no master's degree, the
 original says nothing about mentoring or documentation, and the intern bullet has no
 number to give. Those stay as they are.
+
+## In the UK: a CV, not a resume
+
+When the profile's region is UK, or the role is in the UK, the deliverable is a
+CV. After the rewrite and the truth check, run:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/ats.py" cv hunter/resumes/<role-id>.md --jd hunter/resumes/<role-id>.jd.md
+```
+
+Fix every FIX line: no photo, date of birth, age, marital status, gender,
+religion or National Insurance number; British spelling (optimised, analysed,
+organisation) except where the posting itself spells a term the US way; months
+as words, not 03/14/2025; "CV", not "Resume". Weigh the CONSIDER lines with the
+user: a degree classification (First, 2:1) instead of a GPA, one line on right
+to work if they have it, two pages at most (one for graduates). These change the
+form only. The truth check still governs every fact. British spellings of strong
+verbs score the same as US ones in `ats.py score`.
 
 ## What it never does
 

@@ -3,16 +3,16 @@
   "name": "hunter-skill",
   "description": "The Hunter skill pack for Claude",
   "owner": {
-    "name": "Jake Schincariol",
-    "url": "https://opusjake.ai"
+    "name": "Lewis Tyrrell",
+    "url": "https://github.com/Ltyrrell1"
   },
   "plugins": [
     {
       "name": "hunter-skill",
-      "description": "Eleven Claude skills for landing a job: a job scout, a resume writer, a company researcher, a LinkedIn optimizer, the connector (hiring manager, research, outreach, coffee chat), cover letters, applications, interview coaching, salary negotiation, follow-ups and a pipeline tracker.",
+      "description": "Eleven Claude skills for landing a job in the US or the UK: a job scout, a resume writer, a company researcher, a LinkedIn optimizer, the connector (hiring manager, research, outreach, coffee chat), cover letters, applications, interview coaching, salary negotiation, follow-ups and a pipeline tracker.",
       "source": "./",
       "category": "productivity",
-      "homepage": "https://github.com/Jakeschincariol/hunter-skill"
+      "homepage": "https://github.com/Ltyrrell1/hunter-skill"
     }
   ]
 }

@@ -106,6 +106,24 @@ Cover letter check (example-cover.md): READY
   PASS  reading       grade 6.7 (Flesch-Kincaid), 16.5 words a sentence
 ```
 
+## The answer bank
+
+Before drafting, read the user's approved answers: `python3
+"${CLAUDE_SKILL_DIR}/../hunter-apply/answers.py" bank get --key why_company
+--company <Company>` (and `why_sector`). Build the "why this team" paragraph from
+that answer so the letter, the form and the interview agree. After the user
+approves the letter, offer to save its "why" paragraph to the bank if none is
+saved yet. Then check the draft:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../hunter-apply/answers.py" bank check hunter/covers/<role-id>.md \
+    --company <Company> --resume hunter/resumes/<role-id>.md
+```
+
+Any figure it lists is in neither the bank nor the resume: confirm it with the
+user or take it out. For UK roles, use British spelling and address the letter
+"Dear <name>" (or "Dear Hiring Manager"), signing off "Kind regards".
+
 ## What it never does
 
 - Never invents an achievement, a number, a reason or a connection to the company.

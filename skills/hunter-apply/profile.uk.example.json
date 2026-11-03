@@ -1,0 +1,62 @@
+{
+  "_note": "Example for a FICTIONAL UK candidate. Copy to hunter/profile.json and replace every value with your own true facts. Leave a value null when you have not decided: the skills ask you instead of guessing. region UK switches the scout to UK locations and right to work, the resume skill to UK CV conventions, and the salary skill to UK take-home pay.",
+  "region": "UK",
+  "name": "Sam Carter",
+  "first_name": "Sam",
+  "email": "sam.carter@example.com",
+  "phone": null,
+  "location": "Manchester",
+  "target_roles": ["Software Engineer", "Backend Engineer", "Graduate Software Engineer"],
+  "seniority": "junior",
+  "years_experience": 1,
+  "skills": ["Python", "Java", "SQL", "APIs", "AWS", "Docker", "PostgreSQL"],
+  "locations": ["Manchester, UK", "London, UK", "Leeds, UK"],
+  "remote": true,
+  "relocate": true,
+  "exclude_titles": ["Staff", "Principal", "Director", "Manager", "Lead"],
+  "dream_companies": ["Monzo", "Octopus Energy", "GoCardless", "Wise"],
+  "links": {
+    "linkedin": "https://www.linkedin.com/in/your-handle",
+    "github": "https://github.com/your-handle",
+    "website": null
+  },
+  "work_authorization": {
+    "country": "GB",
+    "authorized": true,
+    "needs_sponsorship": false
+  },
+  "salary_floor": 32000,
+  "currency": "GBP",
+  "student_loan": ["plan2"],
+  "resume_path": "hunter/resumes/base.md",
+  "current": {
+    "company": "Northgate Software",
+    "title": "Junior Developer",
+    "since": "2025-09"
+  },
+  "education": [
+    {"school": "University of Leeds", "degree": "BSc Computer Science", "classification": "2:1", "year": 2025,
+     "a_levels": "Maths A*, Computer Science A, Physics B"}
+  ],
+  "answers": {
+    "start_date": "After my one month notice period",
+    "notice_period": "One month",
+    "relocation": "Yes. I'm open to relocating to London or Leeds.",
+    "onsite": "Yes, I'm happy to work hybrid or in the office.",
+    "how_did_you_hear": "The company's careers site",
+    "previously_employed": "No",
+    "salary_expectation": null,
+    "why_this_company": null,
+    "why_leaving": null,
+    "referral": null,
+    "pronouns": null
+  },
+  "self_identification": {
+    "_note": "Voluntary equality monitoring questions (gender, ethnicity, disability, sexual orientation, religion or belief). Claude never answers these for you. Fill them only if you want them reused; otherwise you answer them yourself on each form.",
+    "gender": null,
+    "race_ethnicity": null,
+    "disability_status": null,
+    "sexual_orientation": null,
+    "religion": null
+  }
+}

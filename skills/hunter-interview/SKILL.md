@@ -125,6 +125,36 @@ STAR 5/5   136 words, about 0.9 minutes spoken
 The coaching that follows: keep the structure, and add one sentence on why a
 rebuild beat a profile-first plan.
 
+## In the UK
+
+UK hiring adds formats to rehearse, especially for graduate schemes:
+competency-based questions ("Tell me about a time when..."), which STAR fits
+as it is; strengths-based questions ("What energises you?", "What do you do
+well without trying?"), which want quick, honest, specific answers rather than
+STAR; video interviews recorded with no one on the call; and assessment
+centres with group exercises, in-tray or case exercises and a presentation.
+The Civil Service publishes its framework (Success Profiles: behaviours,
+strengths, ability, experience, technical) at
+gov.uk/government/publications/success-profiles: cite it for Civil Service
+practice and mark anything else as community-reported.
+
+## The answer bank
+
+Before a mock interview, read the approved "why this company", "why this
+sector" and "why are you leaving" answers with
+`python3 "${CLAUDE_SKILL_DIR}/../hunter-apply/answers.py" bank list`, and check
+the user's spoken answers against them: the interview should tell the same
+story as the cover letter and the form. When the user settles a better answer
+in practice, offer to save it with `bank set` (their approval required).
+
+## Putting interviews in the calendar
+
+When an interview is booked, record it on the role (`pipeline.py update-role
+<id> --next-step "Interview: <format>" --next-date YYYY-MM-DD`). If a calendar
+connector is available, offer to add the event, with the time, the format and
+a prep block the day before; create it only after the user's yes. Otherwise
+`pipeline.py export --format ics` gives them a file to import.
+
 ## What it never does
 
 - Never helps during a live interview, and never suggests hidden notes or tools

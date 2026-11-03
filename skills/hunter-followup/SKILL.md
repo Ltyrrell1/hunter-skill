@@ -109,6 +109,14 @@ follow-ups, and on the 22nd `due` says "today: Coffee chat with Maya C. Afterwar
 a thank-you within 24 hours (template after-coffee)". The full state is
 `../hunter-tracker/pipeline.example.json`.
 
+## Reminders in the calendar
+
+If a calendar connector is available, offer once to put the coming week's
+follow-ups and next steps on the user's calendar as reminders for themselves
+(no attendees), listing them first and creating them only after their yes.
+Otherwise `python3 "${CLAUDE_SKILL_DIR}/../hunter-tracker/pipeline.py" export
+--format ics --out hunter/pipeline.ics` gives them a file to import.
+
 ## What it never does
 
 - Never sends, and never records a message that did not go out.

@@ -1,13 +1,13 @@
 {
   "name": "hunter-skill",
-  "description": "11 Claude skills that land you the job: listings, resume, research, LinkedIn and warm intros to the hiring manager.",
-  "version": "1.0.0",
+  "description": "11 Claude skills that land you the job, in the US or the UK: listings, resume or CV, research, LinkedIn and warm intros to the hiring manager.",
+  "version": "1.1.0",
   "author": {
-    "name": "Jake Schincariol",
-    "url": "https://opusjake.ai"
+    "name": "Lewis Tyrrell",
+    "url": "https://github.com/Ltyrrell1"
   },
-  "homepage": "https://github.com/Jakeschincariol/hunter-skill",
-  "repository": "https://github.com/Jakeschincariol/hunter-skill",
+  "homepage": "https://github.com/Ltyrrell1/hunter-skill",
+  "repository": "https://github.com/Ltyrrell1/hunter-skill",
   "license": "MIT",
   "keywords": [
     "claude-code",
@@ -16,6 +16,8 @@
     "career",
     "resume",
     "interview",
-    "ai-agents"
+    "ai-agents",
+    "uk",
+    "cv"
   ]
 }

@@ -8,9 +8,10 @@ description: >-
   summary by stage, what is coming up this week, what has gone stale, and
   exports CSV for a spreadsheet. Owns the pipeline schema and validates it
   after every change. Use when the user says "show my pipeline", "where am I
-  with each application", "add this job", "I applied", "I got an interview",
-  "I got rejected", "what's next", "what's stale", "export my applications",
-  or "track this".
+  with each application", "add this job", "I applied", "I got an interview", "I
+  got rejected", "what's next", "what's stale", "export my applications", or
+  "track this". Exports a calendar file (.ics) and a one-page dashboard ("add
+  to my calendar", "show my dashboard").
 argument-hint: "[summary | add | move | export]"
 ---
 
@@ -132,6 +133,25 @@ Stale (no activity and nothing scheduled):
 The Google role is still "saved": the application is filled but not sent, and the
 coffee chat comes first. That is the point of the reel: an in at the company before
 the application goes out.
+
+## Calendar and dashboard
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/pipeline.py" export --format ics --out hunter/pipeline.ics
+python3 "${CLAUDE_SKILL_DIR}/pipeline.py" export --format html --out hunter/dashboard.html
+```
+
+The `.ics` file holds every active role's next step and every open follow-up as
+all-day entries, and each booked coffee chat at its time, for import into Google
+Calendar, Outlook or Apple Calendar. Event IDs are stable, so importing again
+updates rather than duplicates in most calendars. If a calendar connector is
+available in the session, offer to add the coming week's items to the user's
+calendar instead, listing each one first and creating them only after the
+user's yes. Never invite anyone else from the tracker.
+
+The `.html` file is a one-page dashboard (counts by stage, the next seven days,
+what has gone quiet, every role) that works offline and in light or dark mode.
+Re-export it to refresh. CSV export is still `--format csv --what roles|contacts|threads`.
 
 ## What it never does
 

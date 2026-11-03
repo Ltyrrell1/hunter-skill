@@ -8,8 +8,8 @@ from _load import ROOT, SKILLS as SKILL_DIR
 SKILLS = ["hunter-scout", "hunter-resume", "hunter-research", "hunter-linkedin", "hunter-connector",
           "hunter-cover", "hunter-apply", "hunter-interview", "hunter-salary", "hunter-followup",
           "hunter-tracker"]
-ABOUT = ("11 Claude skills that land you the job: listings, resume, research, LinkedIn and warm intros "
-         "to the hiring manager.")
+ABOUT = ("11 Claude skills that land you the job, in the US or the UK: listings, resume or CV, research, "
+         "LinkedIn and warm intros to the hiring manager.")
 # skills that can send or submit something on the user's behalf carry the consent rule
 SENDS = ["hunter-connector", "hunter-apply", "hunter-followup"]
 
@@ -36,8 +36,10 @@ class Repo(unittest.TestCase):
         self.assertEqual(found, sorted(SKILLS))
 
     def test_root_matches_the_reel(self):
-        root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git"))
-        self.assertEqual(root, sorted([".claude-plugin", "LICENSE", "README.md", "skills", "tests"]))
+        # the shipped content: dotfiles (.gitignore, .github) and local caches may sit beside it
+        root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".") and d not in ("__pycache__", "hunter"))
+        self.assertEqual(root, sorted(["CHANGELOG.md", "LICENSE", "README.md", "skills", "tests"]))
+        self.assertTrue(os.path.isdir(os.path.join(ROOT, ".claude-plugin")))
 
     def test_frontmatter_name_and_description(self):
         for s in SKILLS:
@@ -58,6 +60,7 @@ class Repo(unittest.TestCase):
         with open(os.path.join(ROOT, ".claude-plugin", "plugin.json")) as fh:
             plugin = json.load(fh)
         self.assertEqual(plugin["name"], "hunter-skill")
+        self.assertIn("Ltyrrell1/hunter-skill", plugin["repository"])
         self.assertEqual(plugin["description"], ABOUT)
         with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")) as fh:
             market = json.load(fh)
@@ -68,9 +71,10 @@ class Repo(unittest.TestCase):
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
             readme = " ".join(fh.read().split())
         self.assertTrue(readme.startswith("# The Hunter skill"))
-        for line in ("Eleven Claude skills that land you the job. Free, MIT, no signup, no API key, nothing to connect.",
-                     "https://github.com/Jakeschincariol/hunter-skill install skill",
-                     "/plugin marketplace add Jakeschincariol/hunter-skill",
+        for line in ("Eleven Claude skills that land you the job, in the US or the UK. Free, MIT, no signup, no API "
+                     "key, nothing to connect.",
+                     "https://github.com/Ltyrrell1/hunter-skill install skill",
+                     "/plugin marketplace add Ltyrrell1/hunter-skill",
                      "/plugin install hunter-skill@hunter-skill",
                      "## Fine print"):
             self.assertIn(line, readme)

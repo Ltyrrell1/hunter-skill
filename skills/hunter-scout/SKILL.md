@@ -6,12 +6,13 @@ description: >-
   (Greenhouse, Lever, Ashby, NVIDIA's Workday board, Netflix's careers search),
   filters by title, place, remote and how recent, scores every listing 0-100
   against hunter/profile.json with the reasons (title, skills, location,
-  seniority, pay range, freshness), writes hunter/jobs.json and adds the
-  user's picks to the pipeline. Gives the manual route for Google, Meta and
-  Amazon, whose careers sites cannot be read by a script. Use when the user
-  says "find me jobs", "best listings for me", "scout roles", "what's open at
-  Google", "search Software Engineer jobs", "rank these jobs", or "where
-  should I apply".
+  seniority, pay range, freshness), writes hunter/jobs.json and adds the user's
+  picks to the pipeline. Gives the manual route for Google, Meta and Amazon,
+  whose careers sites cannot be read by a script. Use when the user says "find
+  me jobs", "best listings for me", "scout roles", "what's open at Google",
+  "search Software Engineer jobs", "rank these jobs", or "where should I
+  apply". Also for UK job hunts ("jobs in London", "UK graduate schemes"), with
+  UK locations and right to work.
 argument-hint: "[company or title]"
 ---
 
@@ -128,6 +129,30 @@ role on Google Cloud, Infrastructure in Mountain View. Netflix's "Software
 Engineer (L6) - Compute Runtime" (remote, United States) scores 75: title
 match, remote, posted 20 days ago, skills to check on the posting. He picks
 it and the Google role, and both land in `hunter/pipeline.json` as `saved`.
+
+## In the UK
+
+When `hunter/profile.json` has `"region": "UK"` (or `work_authorization.country`
+`"GB"`), the score treats UK places as the user's own: London, Manchester,
+Edinburgh and the rest, with US namesakes such as Cambridge, MA ruled out.
+Remote roles open to the UK, Europe or EMEA count as remote; a US-only listing
+scores 0 for location and carries a right-to-work warning. Start from
+`skills/hunter-apply/profile.uk.example.json`.
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/jobs.py" search --region UK            # the UK boards in boards.json
+python3 "${CLAUDE_SKILL_DIR}/jobs.py" search --region UK --board "Acme=greenhouse:acme"
+python3 "${CLAUDE_SKILL_DIR}/jobs.py" check --region UK             # confirm the UK tokens live
+```
+
+The UK boards (Monzo, Google DeepMind, GoCardless, Cleo, Octopus Energy) were
+added from the companies' public job URLs; run `check --region UK` once to
+confirm them. Many US boards in the file hire in London too: name them with
+`--company` and the location score sorts it out. Big UK employers and
+graduate schemes often have no feed: Wise and Civil Service Jobs are listed as
+manual routes, and graduate schemes (banks, consultancies, the Civil Service
+Fast Stream) open and close on fixed dates, so add each one to the pipeline
+with its deadline as the next date.
 
 ## What it never does
 
